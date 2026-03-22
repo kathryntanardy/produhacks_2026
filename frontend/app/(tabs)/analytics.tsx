@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +15,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import CircleBgExpenses from '@/assets/images/expenses/Circle_Background_Expenses.svg';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
+const TABS = ['Score', 'Spending'] as const;
+type ChartTab = (typeof TABS)[number];
 
 const LEGEND = [
   { label: '300 - 659', color: '#F44336' },
@@ -67,32 +71,39 @@ function formatPct(value: number, invert = false) {
 }
 
 export default function AnalyticsScreen() {
-  const { backendUser } = useAuth();
+  const { backendUser, syncBackendUser } = useAuth();
   const insets = useSafeAreaInsets();
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ChartTab>('Score');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) return;
-        const res = await fetch(`${API_BASE}/api/analytics-report`, {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-        if (!res.ok) return;
-        const payload = await res.json();
-        setReport(payload);
-      } catch {
-        // keep fallback UI
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
+  const fetchReport = useCallback(async () => {
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      const res = await fetch(`${API_BASE}/api/analytics-report`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const payload = await res.json();
+      setReport(payload);
+    } catch {
+      // keep fallback UI
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchReport(); }, [fetchReport]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchReport(), syncBackendUser()]);
+    setRefreshing(false);
+  }, [fetchReport, syncBackendUser]);
 
   const fallbackScoreEntries = Object.entries(backendUser?.credit_score ?? {}).sort(([a], [b]) => a.localeCompare(b));
   const fallbackLatest = fallbackScoreEntries.length ? fallbackScoreEntries[fallbackScoreEntries.length - 1][1] : 0;
@@ -108,32 +119,27 @@ export default function AnalyticsScreen() {
     : [fallbackPrev * 0.9, fallbackPrev, fallbackLatest];
   const spendingSeries = report?.spending_series?.length ? report.spending_series : [450, 520, 410];
 
+  const selectedSeries = activeTab === 'Score' ? scoreSeries : spendingSeries;
   const chartData = useMemo(
     () =>
       monthItems.map((monthItem, i) => {
-        const score = Number(scoreSeries[i] ?? 0);
-        const spending = Number(spendingSeries[i] ?? 0);
+        const value = Number(selectedSeries[i] ?? 0);
         return {
           key: monthItem.key || `${monthItem.label}-${i}`,
           month: monthItem.label,
-          score,
-          spending,
+          bar: value,
+          valueText: activeTab === 'Score' ? `${Math.round(value)}` : `$${Math.round(value)}`,
         };
       }),
-    [monthItems, scoreSeries, spendingSeries]
+    [monthItems, selectedSeries, activeTab]
   );
-  const scoreValues = chartData.map((d) => d.score);
-  const spendingValues = chartData.map((d) => d.spending);
-  const minScore = Math.min(...scoreValues);
-  const maxScore = Math.max(...scoreValues, 1);
-  const scoreRange = Math.max(maxScore - minScore, 1);
-  const scoreLowerBound = Math.max(0, minScore - scoreRange * 0.25);
-  const scoreUpperBound = maxScore + scoreRange * 0.15;
-  const minSpending = Math.min(...spendingValues);
-  const maxSpending = Math.max(...spendingValues, 1);
-  const spendingRange = Math.max(maxSpending - minSpending, 1);
-  const spendingLowerBound = Math.max(0, minSpending - spendingRange * 0.25);
-  const spendingUpperBound = maxSpending + spendingRange * 0.15;
+  const seriesValues = chartData.map((d) => d.bar);
+  const minBar = Math.min(...seriesValues);
+  const maxBar = Math.max(...seriesValues, 1);
+  const rawRange = Math.max(maxBar - minBar, 1);
+  // Visual zoom: tighten y-range so month-to-month differences are clearer.
+  const chartLowerBound = Math.max(0, minBar - rawRange * 0.25);
+  const chartUpperBound = maxBar + rawRange * 0.15;
   const BAR_MAX_H = 120;
   const BAR_MIN_H = 10;
   const latestScore = report?.latest_score ?? fallbackLatest;
@@ -164,62 +170,50 @@ export default function AnalyticsScreen() {
         <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
       </View>
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>Analytics</Text>
-        <Text style={styles.heroScore}>{latestScore || '—'}</Text>
-        <Text style={styles.heroDate}>{dateStr}</Text>
-      </View>
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 72 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
       >
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+          <Text style={styles.headerTitle}>Analytics</Text>
+          <Text style={styles.heroScore}>{latestScore || '—'}</Text>
+          <Text style={styles.heroDate}>{dateStr}</Text>
+        </View>
         <View style={styles.chartCard}>
           <View style={styles.tabBar}>
-            <View style={styles.tab}>
-              <Text style={styles.tabTextFixed}>Score</Text>
-            </View>
-            <View style={styles.tab}>
-              <Text style={styles.tabTextFixed}>Spending</Text>
-            </View>
+            {TABS.map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, activeTab === tab && styles.tabActive]}
+                onPress={() => setActiveTab(tab)}>
+                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           <View style={styles.chartWrap}>
             {chartData.map((group) => (
               <View key={group.key} style={styles.chartGroup}>
+                <Text style={styles.metricValue}>{group.valueText}</Text>
                 <View style={styles.barGroup}>
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        height: Math.max(
-                          BAR_MIN_H,
-                          Math.round(
-                            ((group.score - scoreLowerBound) / Math.max(scoreUpperBound - scoreLowerBound, 1)) * BAR_MAX_H
-                          )
-                        ),
-                        backgroundColor: '#7C6BF8',
-                      },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        height: Math.max(
-                          BAR_MIN_H,
-                          Math.round(
-                            ((group.spending - spendingLowerBound) /
-                              Math.max(spendingUpperBound - spendingLowerBound, 1)) *
-                              BAR_MAX_H
-                          )
-                        ),
-                        backgroundColor: '#D4C5F0',
-                      },
-                    ]}
-                  />
+                  {(() => {
+                    const normalized = (group.bar - chartLowerBound) / Math.max(chartUpperBound - chartLowerBound, 1);
+                    const h = Math.max(BAR_MIN_H, Math.round(normalized * BAR_MAX_H));
+                    return (
+                      <View
+                        style={[
+                          styles.bar,
+                          {
+                            height: h,
+                            backgroundColor: '#7C6BF8',
+                          },
+                        ]}
+                      />
+                    );
+                  })()}
                 </View>
                 <Text style={styles.chartLabel}>{group.month}</Text>
               </View>
@@ -405,14 +399,20 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     paddingVertical: 8,
     alignItems: 'center',
   },
-  tabTextFixed: {
+  tabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  tabText: {
     fontSize: 16,
-    fontFamily: Fonts.rounded,
+    fontFamily: Fonts.sans,
     color: '#07004D',
+  },
+  tabTextActive: {
+    fontFamily: Fonts.rounded,
   },
   chartWrap: {
     flexDirection: 'row',
@@ -435,7 +435,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
-    gap: 8,
   },
   bar: {
     width: 30,

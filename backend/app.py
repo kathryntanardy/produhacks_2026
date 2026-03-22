@@ -36,9 +36,6 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-app = Flask(__name__)
-CORS(app)
-
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
     "DATABASE_URL", "postgresql://kathryntanardy@localhost/credit_app"
 )
@@ -902,22 +899,33 @@ def simulate_transaction():
     # Positive = spending (increases balance), negative = payment (decreases balance)
     user.balance = old_balance + amount
 
-    # Quest check: payment starting with "PAYMENT FROM" of at least 25% of old balance
-    quest_completed = None
-    quest_id = "weekly_payment_25pct"
-    completed = user.completed_quests or []
+    completed = list(user.completed_quests or [])
+    quests_completed = []
+    credit_limit = float(user.credit_limit or 0)
+    new_balance = float(user.balance)
     is_payment = company.upper().startswith("PAYMENT FROM")
-    if is_payment and amount < 0 and old_balance > 0:
-        payment = abs(amount)
-        threshold = old_balance * 0.25
-        if payment >= threshold and quest_id not in completed:
-            xp_reward = 10
-            user.xp += xp_reward
-            completed.append(quest_id)
-            user.completed_quests = completed
-            quest_completed = {"quest_id": quest_id, "xp_awarded": xp_reward}
-            print(f"QUEST COMPLETED: {quest_id} | +{xp_reward} XP for user {user.id}")
 
+    # Quest 1: "PAYMENT FROM" of at least 25% of old balance
+    q1 = "weekly_payment_25pct"
+    if is_payment and amount < 0 and old_balance > 0 and q1 not in completed:
+        if abs(amount) >= old_balance * 0.25:
+            user.xp += 10
+            completed.append(q1)
+            quests_completed.append({"quest_id": q1, "xp_awarded": 10})
+            print(f"QUEST COMPLETED: {q1} | +10 XP for user {user.id}")
+
+    # Quest 2: Bring utilization down by at least 5 percentage points
+    q2 = "weekly_util_down_5pct"
+    if credit_limit > 0 and q2 not in completed:
+        old_util = (old_balance / credit_limit) * 100
+        new_util = (new_balance / credit_limit) * 100
+        if old_util - new_util >= 5:
+            user.xp += 20
+            completed.append(q2)
+            quests_completed.append({"quest_id": q2, "xp_awarded": 20})
+            print(f"QUEST COMPLETED: {q2} | +20 XP for user {user.id}")
+
+    user.completed_quests = completed
     db.session.commit()
 
     print(f"\nSIMULATED TRANSACTION for user {user.id}: ${amount:.2f} at {company} on {day} | New balance: ${float(user.balance):.2f}")
@@ -930,7 +938,7 @@ def simulate_transaction():
             "company": txn.company,
             "day": str(txn.day),
         },
-        "quest_completed": quest_completed,
+        "quests_completed": quests_completed,
     })
 
 

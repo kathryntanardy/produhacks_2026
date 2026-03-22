@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -84,6 +86,14 @@ export default function LinkedHomeScreen() {
   const resolvedRank = rank ?? backendUser?.rank ?? 'beta';
   const BadgeIcon = resolvedRank === 'alpha' ? AlphaBadge : resolvedRank === 'sigma' ? SigmaBadge : BetaBadge;
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([syncBackendUser(), refreshRank()]);
+    setRefreshing(false);
+  }, [syncBackendUser, refreshRank]);
+
   useFocusEffect(
     React.useCallback(() => {
       refreshRank();
@@ -105,9 +115,15 @@ export default function LinkedHomeScreen() {
 
   return (
     <View style={styles.container}>
+      <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
+      >
       {/* Header */}
       <View style={styles.header}>
-        <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
         <View style={styles.headerContent}>
           <Text style={styles.greeting}>Hello,</Text>
           <Text style={styles.name}>{backendUser?.name || 'there'}</Text>
@@ -183,6 +199,7 @@ export default function LinkedHomeScreen() {
           </View>
         </View>
       </View>
+      </ScrollView>
     </View>
   );
 }

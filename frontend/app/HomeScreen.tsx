@@ -4,7 +4,9 @@ import {
   Alert,
   Image,
   Modal,
+  RefreshControl,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -37,7 +39,14 @@ export default function HomeScreen() {
   const { backendUser, syncBackendUser } = useAuth();
   const hasCard = (backendUser?.credit_limit ?? 0) > 0;
 
+  const [refreshing, setRefreshing] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await syncBackendUser();
+    setRefreshing(false);
+  }, [syncBackendUser]);
   const [showWebView, setShowWebView] = useState(false);
   const [linking, setLinking] = useState(false);
   const webViewRef = useRef<WebView>(null);
@@ -115,8 +124,13 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
+      >
       <View style={styles.header}>
-        <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
         <View style={styles.headerContent}>
           <Text style={styles.greeting}>Hello,</Text>
           <Text style={styles.name}>{backendUser?.name || 'there'}</Text>
@@ -180,6 +194,7 @@ export default function HomeScreen() {
           <LockedCard locked={!hasCard} title="Goals" compact />
         </View>
       </View>
+      </ScrollView>
 
       <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet" onRequestClose={dismissLink}>
         <SafeAreaView style={styles.modalContainer}>

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -161,6 +162,7 @@ export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchTransactions = useCallback(async (showSpinner = false) => {
     try {
@@ -183,6 +185,12 @@ export default function ExpensesScreen() {
     }
   }, []);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchTransactions(), syncBackendUser()]);
+    setRefreshing(false);
+  }, [fetchTransactions, syncBackendUser]);
+
   useFocusEffect(
     useCallback(() => {
       fetchTransactions(transactions.length === 0);
@@ -203,42 +211,42 @@ export default function ExpensesScreen() {
         <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
       </View>
 
-      {/* ── Fixed top section ── */}
-      <View style={[styles.fixedTop, { paddingTop: insets.top + 16 }]}>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Expenses</Text>
-        </View>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
+      >
+        {/* ── Top section ── */}
+        <View style={[styles.fixedTop, { paddingTop: insets.top + 16 }]}>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Expenses</Text>
+          </View>
 
-        <View style={styles.cardSection}>
-          <View style={styles.cardWrap}>
-            <CardSvg width="100%" height="100%" />
-            <View style={styles.cardOverlay} pointerEvents="none">
-              <Text style={styles.cardBalance}>
-                ${creditAvailable.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          <View style={styles.cardSection}>
+            <View style={styles.cardWrap}>
+              <CardSvg width="100%" height="100%" />
+              <View style={styles.cardOverlay} pointerEvents="none">
+                <Text style={styles.cardBalance}>
+                  ${creditAvailable.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.cardLabel}>Credit Available</Text>
+              </View>
+            </View>
+
+            <Text style={styles.addCardText}>Add another card</Text>
+
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Balance Owed</Text>
+              <Text style={styles.totalAmount}>
+                ${(backendUser?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </Text>
-              <Text style={styles.cardLabel}>Credit Available</Text>
             </View>
           </View>
-
-          <Text style={styles.addCardText}>Add another card</Text>
-
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Balance Owed</Text>
-            <Text style={styles.totalAmount}>
-              ${(backendUser?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-            </Text>
-          </View>
         </View>
-      </View>
 
-      {/* ── Scrollable transactions ── */}
-      <View style={styles.txSection}>
-        <Text style={styles.sectionTitle}>Transactions</Text>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: 120 }}
-          showsVerticalScrollIndicator={false}
-        >
+        {/* ── Transactions ── */}
+        <View style={styles.txSection}>
+          <Text style={styles.sectionTitle}>Transactions</Text>
           {loading ? (
             <ActivityIndicator style={{ marginTop: 32 }} color="#7B2FBE" />
           ) : transactions.length === 0 ? (
@@ -319,8 +327,8 @@ export default function ExpensesScreen() {
               </View>
             ))
           )}
-        </ScrollView>
-      </View>
+        </View>
+      </ScrollView>
     </View>
   );
 }
