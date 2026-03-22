@@ -23,10 +23,10 @@ function AuthGuardStack() {
   useEffect(() => {
     if (loading) return;
 
-    const isAuthRoute = pathname === '/login' || pathname === '/signup';
+    const isAuthRoute = pathname === '/front-page' || pathname === '/login' || pathname === '/signup';
 
     if (!user && !isAuthRoute) {
-      router.replace('/signup');
+      router.replace('/front-page');
       return;
     }
 
@@ -48,6 +48,7 @@ function AuthGuardStack() {
       screenOptions={{
         headerTitleStyle: { fontFamily: Fonts.rounded },
       }}>
+      <Stack.Screen name="front-page" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="signup-questions/[step]" options={{ headerShown: false }} />

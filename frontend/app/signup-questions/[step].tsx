@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import { updateProfile } from 'firebase/auth';
@@ -13,17 +13,27 @@ import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { colors } from '@/theme/colors';
 
+
+import Bg1 from '@/assets/images/signup_questions/1.svg';
+import Bg2 from '@/assets/images/signup_questions/2.svg';
+import Bg3 from '@/assets/images/signup_questions/3.svg';
+import Bg4 from '@/assets/images/signup_questions/4.svg';
+import Bg5 from '@/assets/images/signup_questions/5.svg';
+import Bg6 from '@/assets/images/signup_questions/6.svg';
+import Bg7 from '@/assets/images/signup_questions/7.svg';
+import Bg8 from '@/assets/images/signup_questions/8.svg';
+
 const TOTAL_STEPS = 8;
 const STEP_BACKGROUNDS: Record<number, any> = {
-  1: require('@/assets/images/signup_questions/1.png'),
-  2: require('@/assets/images/signup_questions/2.png'),
-  3: require('@/assets/images/signup_questions/3.png'),
-  4: require('@/assets/images/signup_questions/4.png'),
-  5: require('@/assets/images/signup_questions/5.png'),
-  6: require('@/assets/images/signup_questions/6.png'),
-  7: require('@/assets/images/signup_questions/7.png'),
-  8: require('@/assets/images/signup_questions/8.png'),
-} as const;
+  1: Bg1,
+  2: Bg2,
+  3: Bg3,
+  4: Bg4,
+  5: Bg5,
+  6: Bg6,
+  7: Bg7,
+  8: Bg8,
+};
 
 function getStep(rawStep: string | string[] | undefined) {
   const numericStep = Number(Array.isArray(rawStep) ? rawStep[0] : rawStep);
@@ -238,10 +248,11 @@ export default function SignupQuestionsStep() {
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" style="light" />
       {isFirstStep ? (
-        <ImageBackground
-          source={STEP_BACKGROUNDS[1]}
-          style={styles.background}
-          resizeMode="cover">
+        <View style={styles.background}>
+          {(() => {
+            const Bg = STEP_BACKGROUNDS[1];
+            return <Bg width="100%" height="100%" style={StyleSheet.absoluteFillObject} />;
+          })()}
           <ScrollView contentContainerStyle={styles.firstStepContent} showsVerticalScrollIndicator={false}>
             <View style={styles.card}>
               <Text style={styles.cardHeading}>Provide/Complete the Following:</Text>
@@ -277,12 +288,13 @@ export default function SignupQuestionsStep() {
               />
             </View>
           </ScrollView>
-        </ImageBackground>
+        </View>
       ) : (
-        <ImageBackground
-          source={STEP_BACKGROUNDS[currentStep]}
-          style={styles.background}
-          resizeMode="cover">
+        <View style={styles.background}>
+          {(() => {
+            const Bg = STEP_BACKGROUNDS[currentStep];
+            return <Bg width="100%" height="100%" style={StyleSheet.absoluteFillObject} />;
+          })()}
           {isSecondStep ? (
             <View style={styles.secondStepForm}>
               <LinedInput label="First Name" value={firstName} onChangeText={setFirstName} />
@@ -366,7 +378,7 @@ export default function SignupQuestionsStep() {
               <SecondaryButton content="Continue" width="100%" onPress={handleContinue} />
             </View>
           ) : null}
-        </ImageBackground>
+        </View>
       )}
 
       {isThirdStep || isFourthStep || isFifthStep || isSixthStep || isSeventhStep ? (
