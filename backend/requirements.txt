@@ -7,3 +7,4 @@ python-dotenv
 psycopg2-binary
 requests
 uagents>=0.22.0
+plaid_python==38.1.0
