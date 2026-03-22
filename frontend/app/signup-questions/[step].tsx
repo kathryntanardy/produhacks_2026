@@ -227,7 +227,10 @@ export default function SignupQuestionsStep() {
     }
 
     if (isLastStep) {
-      router.replace('/(tabs)');
+      router.replace({
+        pathname: '/test/[step]',
+        params: { step: '1' },
+      });
       return;
     }
 

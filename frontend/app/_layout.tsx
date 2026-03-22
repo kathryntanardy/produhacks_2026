@@ -23,14 +23,15 @@ function AuthGuardStack() {
   useEffect(() => {
     if (loading) return;
 
-    const isAuthRoute = pathname === '/front-page' || pathname === '/login' || pathname === '/signup';
+    const isPublicRoute = pathname === '/front-page' || pathname === '/login' || pathname === '/signup';
+    const shouldRedirectAuthed = pathname === '/front-page' || pathname === '/login';
 
-    if (!user && !isAuthRoute) {
+    if (!user && !isPublicRoute) {
       router.replace('/front-page');
       return;
     }
 
-    if (user && isAuthRoute) {
+    if (user && shouldRedirectAuthed) {
       router.replace('/(tabs)');
     }
   }, [loading, pathname, router, user]);
@@ -52,6 +53,7 @@ function AuthGuardStack() {
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
       <Stack.Screen name="signup-questions/[step]" options={{ headerShown: false }} />
+      <Stack.Screen name="test/[step]" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
     </Stack>
