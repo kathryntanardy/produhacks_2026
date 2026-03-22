@@ -83,10 +83,6 @@ export default function SignupQuestionsStep() {
   const isSeventhStep = currentStep === 7;
   const { syncBackendUser } = useAuth();
   const [checkState, setCheckState] = useState({
-    personalInformation: false,
-    homeAddress: false,
-    financialGoals: false,
-    literacyTest: false,
     consent: false,
   });
   const [firstName, setFirstName] = useState('');
@@ -257,30 +253,6 @@ export default function SignupQuestionsStep() {
             return <Bg width="100%" height="100%" style={StyleSheet.absoluteFillObject} />;
           })()}
           <ScrollView contentContainerStyle={styles.firstStepContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.card}>
-              <Text style={styles.cardHeading}>Provide/Complete the Following:</Text>
-              <CheckerRow
-                label="Personal Information"
-                checked={checkState.personalInformation}
-                onToggle={() => toggleCheck('personalInformation')}
-              />
-              <CheckerRow
-                label="Home Address"
-                checked={checkState.homeAddress}
-                onToggle={() => toggleCheck('homeAddress')}
-              />
-              <CheckerRow
-                label="Financial Goals"
-                checked={checkState.financialGoals}
-                onToggle={() => toggleCheck('financialGoals')}
-              />
-              <CheckerRow
-                label="Short Financial Literacy Test"
-                checked={checkState.literacyTest}
-                onToggle={() => toggleCheck('literacyTest')}
-              />
-            </View>
-
             <View style={styles.card}>
               <Text style={styles.cardHeading}>Consent Form</Text>
               <CheckerRow

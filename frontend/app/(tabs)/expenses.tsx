@@ -211,42 +211,43 @@ export default function ExpensesScreen() {
         <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
-      >
-        {/* ── Top section ── */}
-        <View style={[styles.fixedTop, { paddingTop: insets.top + 16 }]}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Expenses</Text>
-          </View>
-
-          <View style={styles.cardSection}>
-            <View style={styles.cardWrap}>
-              <CardSvg width="100%" height="100%" />
-              <View style={styles.cardOverlay} pointerEvents="none">
-                <Text style={styles.cardBalance}>
-                  ${creditAvailable.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text style={styles.cardLabel}>Credit Available</Text>
-              </View>
-            </View>
-
-            <Text style={styles.addCardText}>Add another card</Text>
-
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Balance Owed</Text>
-              <Text style={styles.totalAmount}>
-                ${(backendUser?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </Text>
-            </View>
-          </View>
+      {/* ── Top section (fixed) ── */}
+      <View style={[styles.fixedTop, { paddingTop: insets.top + 16 }]}>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>Expenses</Text>
         </View>
 
-        {/* ── Transactions ── */}
-        <View style={styles.txSection}>
-          <Text style={styles.sectionTitle}>Transactions</Text>
+        <View style={styles.cardSection}>
+          <View style={styles.cardWrap}>
+            <CardSvg width="100%" height="100%" />
+            <View style={styles.cardOverlay} pointerEvents="none">
+              <Text style={styles.cardBalance}>
+                ${creditAvailable.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </Text>
+              <Text style={styles.cardLabel}>Credit Available</Text>
+            </View>
+          </View>
+
+          <Text style={styles.addCardText}>Add another card</Text>
+
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Balance Owed</Text>
+            <Text style={styles.totalAmount}>
+              ${(backendUser?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Transactions (scrollable only here) ── */}
+      <View style={styles.txSection}>
+        <Text style={styles.sectionTitle}>Transactions</Text>
+        <ScrollView
+          style={styles.txListScroll}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
+        >
           {loading ? (
             <ActivityIndicator style={{ marginTop: 32 }} color="#7B2FBE" />
           ) : transactions.length === 0 ? (
@@ -264,71 +265,71 @@ export default function ExpensesScreen() {
                     const isPaidExpense = !isPayment && Boolean(status?.paid);
                     const isPaidOverdue = isPaidExpense && (status?.paidLateDays ?? 0) > 0;
                     return (
-                  <View
-                    key={t.id}
-                    style={[
-                      styles.txRow,
-                      isPayment ? styles.txRowPaid : undefined,
-                      isPaidExpense ? styles.txRowPaid : undefined,
-                      isPaidOverdue ? styles.txRowPaidOverdue : undefined,
-                      !isPayment &&
-                      !status?.paid &&
-                      (status?.daysUntilDue ?? 999) <= 5
-                        ? styles.txRowDueSoon
-                        : undefined,
-                    ]}>
-                    <View style={[styles.txIcon, { backgroundColor: iconColor(t.company) }]}>
-                      <Text style={styles.txIconText}>{iconText(t.company)}</Text>
-                    </View>
-                    <View style={styles.txInfo}>
-                      <Text
+                      <View
+                        key={t.id}
                         style={[
-                          styles.txCompany,
-                          isPayment || isPaidExpense ? styles.txCompanyPaid : undefined,
-                          isPaidOverdue ? styles.txCompanyPaidOverdue : undefined,
+                          styles.txRow,
+                          isPayment ? styles.txRowPaid : undefined,
+                          isPaidExpense ? styles.txRowPaid : undefined,
+                          isPaidOverdue ? styles.txRowPaidOverdue : undefined,
                           !isPayment &&
                           !status?.paid &&
                           (status?.daysUntilDue ?? 999) <= 5
-                            ? styles.txCompanyDueSoon
+                            ? styles.txRowDueSoon
                             : undefined,
-                        ]}
-                        numberOfLines={1}>
-                        {t.company}
-                      </Text>
-                      {isPayment ? (
-                        <Text style={[styles.txDate, styles.txDatePaid]}>Payment recorded</Text>
-                      ) : isPaidOverdue ? (
-                        <Text style={[styles.txDate, styles.txDatePaidOverdue]}>
-                          Paid after due date · Overdue by {status?.paidLateDays ?? 0} day(s)
+                        ]}>
+                        <View style={[styles.txIcon, { backgroundColor: iconColor(t.company) }]}>
+                          <Text style={styles.txIconText}>{iconText(t.company)}</Text>
+                        </View>
+                        <View style={styles.txInfo}>
+                          <Text
+                            style={[
+                              styles.txCompany,
+                              isPayment || isPaidExpense ? styles.txCompanyPaid : undefined,
+                              isPaidOverdue ? styles.txCompanyPaidOverdue : undefined,
+                              !isPayment &&
+                              !status?.paid &&
+                              (status?.daysUntilDue ?? 999) <= 5
+                                ? styles.txCompanyDueSoon
+                                : undefined,
+                            ]}
+                            numberOfLines={1}>
+                            {t.company}
+                          </Text>
+                          {isPayment ? (
+                            <Text style={[styles.txDate, styles.txDatePaid]}>Payment recorded</Text>
+                          ) : isPaidOverdue ? (
+                            <Text style={[styles.txDate, styles.txDatePaidOverdue]}>
+                              Paid after due date · Overdue by {status?.paidLateDays ?? 0} day(s)
+                            </Text>
+                          ) : status?.paid ? (
+                            <Text style={[styles.txDate, styles.txDatePaid]}>
+                              Paid · Due {formatDate(status.dueDate)}
+                            </Text>
+                          ) : (status?.daysUntilDue ?? 999) <= 5 ? (
+                            <Text style={[styles.txDate, styles.txDateDueSoon]}>
+                              {status && status.daysUntilDue < 0
+                                ? `Overdue by ${Math.abs(status.daysUntilDue)} day(s)`
+                                : `Due in ${status?.daysUntilDue ?? 0} day(s)`}
+                            </Text>
+                          ) : (
+                            <Text style={styles.txDate}>
+                              Due {formatDate(status?.dueDate ?? t.day)}
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={[styles.txAmount, isPayment && styles.txCredit, isPaidOverdue && styles.txAmountPaidOverdue]}>
+                          {isPayment ? '-' : ''}${Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </Text>
-                      ) : status?.paid ? (
-                        <Text style={[styles.txDate, styles.txDatePaid]}>
-                          Paid · Due {formatDate(status.dueDate)}
-                        </Text>
-                      ) : (status?.daysUntilDue ?? 999) <= 5 ? (
-                        <Text style={[styles.txDate, styles.txDateDueSoon]}>
-                          {status && status.daysUntilDue < 0
-                            ? `Overdue by ${Math.abs(status.daysUntilDue)} day(s)`
-                            : `Due in ${status?.daysUntilDue ?? 0} day(s)`}
-                        </Text>
-                      ) : (
-                        <Text style={styles.txDate}>
-                          Due {formatDate(status?.dueDate ?? t.day)}
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={[styles.txAmount, isPayment && styles.txCredit, isPaidOverdue && styles.txAmountPaidOverdue]}>
-                      {isPayment ? '-' : ''}${Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </Text>
-                  </View>
+                      </View>
                     );
                   })()
                 ))}
               </View>
             ))
           )}
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -367,7 +368,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
   },
-  scroll: { flex: 1 },
+  txListScroll: {
+    flex: 1,
+  },
 
   // Card
   cardWrap: {
