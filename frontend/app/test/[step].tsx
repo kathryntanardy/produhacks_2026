@@ -30,8 +30,8 @@ const QUESTION_CONFIGS: Record<number, { options: string[]; correctOption: strin
     correctOption: 'Monthly',
   },
   3: {
-    options: ['30%', '33%', '35%', '40%'],
-    correctOption: '35%',
+    options: ['Lengths of credit history', 'Amounts owed', 'Credit Mix', 'Payment History'],
+    correctOption: 'Amounts owed',
   },
   4: {
     options: [

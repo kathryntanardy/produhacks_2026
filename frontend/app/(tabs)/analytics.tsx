@@ -4,7 +4,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,8 +13,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import CircleBgExpenses from '@/assets/images/expenses/Circle_Background_Expenses.svg';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
-const TABS = ['Score', 'Spending'] as const;
-type ChartTab = (typeof TABS)[number];
 
 const LEGEND = [
   { label: '300 - 659', color: '#F44336' },
@@ -74,7 +71,6 @@ export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ChartTab>('Score');
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -112,27 +108,32 @@ export default function AnalyticsScreen() {
     : [fallbackPrev * 0.9, fallbackPrev, fallbackLatest];
   const spendingSeries = report?.spending_series?.length ? report.spending_series : [450, 520, 410];
 
-  const selectedSeries = activeTab === 'Score' ? scoreSeries : spendingSeries;
   const chartData = useMemo(
     () =>
       monthItems.map((monthItem, i) => {
-        const value = Number(selectedSeries[i] ?? 0);
+        const score = Number(scoreSeries[i] ?? 0);
+        const spending = Number(spendingSeries[i] ?? 0);
         return {
           key: monthItem.key || `${monthItem.label}-${i}`,
           month: monthItem.label,
-          bar: value,
-          valueText: activeTab === 'Score' ? `${Math.round(value)}` : `$${Math.round(value)}`,
+          score,
+          spending,
         };
       }),
-    [monthItems, selectedSeries, activeTab]
+    [monthItems, scoreSeries, spendingSeries]
   );
-  const seriesValues = chartData.map((d) => d.bar);
-  const minBar = Math.min(...seriesValues);
-  const maxBar = Math.max(...seriesValues, 1);
-  const rawRange = Math.max(maxBar - minBar, 1);
-  // Visual zoom: tighten y-range so month-to-month differences are clearer.
-  const chartLowerBound = Math.max(0, minBar - rawRange * 0.25);
-  const chartUpperBound = maxBar + rawRange * 0.15;
+  const scoreValues = chartData.map((d) => d.score);
+  const spendingValues = chartData.map((d) => d.spending);
+  const minScore = Math.min(...scoreValues);
+  const maxScore = Math.max(...scoreValues, 1);
+  const scoreRange = Math.max(maxScore - minScore, 1);
+  const scoreLowerBound = Math.max(0, minScore - scoreRange * 0.25);
+  const scoreUpperBound = maxScore + scoreRange * 0.15;
+  const minSpending = Math.min(...spendingValues);
+  const maxSpending = Math.max(...spendingValues, 1);
+  const spendingRange = Math.max(maxSpending - minSpending, 1);
+  const spendingLowerBound = Math.max(0, minSpending - spendingRange * 0.25);
+  const spendingUpperBound = maxSpending + spendingRange * 0.15;
   const BAR_MAX_H = 120;
   const BAR_MIN_H = 10;
   const latestScore = report?.latest_score ?? fallbackLatest;
@@ -177,36 +178,48 @@ export default function AnalyticsScreen() {
       >
         <View style={styles.chartCard}>
           <View style={styles.tabBar}>
-            {TABS.map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tab, activeTab === tab && styles.tabActive]}
-                onPress={() => setActiveTab(tab)}>
-                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-              </TouchableOpacity>
-            ))}
+            <View style={styles.tab}>
+              <Text style={styles.tabTextFixed}>Score</Text>
+            </View>
+            <View style={styles.tab}>
+              <Text style={styles.tabTextFixed}>Spending</Text>
+            </View>
           </View>
 
           <View style={styles.chartWrap}>
             {chartData.map((group) => (
               <View key={group.key} style={styles.chartGroup}>
-                <Text style={styles.metricValue}>{group.valueText}</Text>
                 <View style={styles.barGroup}>
-                  {(() => {
-                    const normalized = (group.bar - chartLowerBound) / Math.max(chartUpperBound - chartLowerBound, 1);
-                    const h = Math.max(BAR_MIN_H, Math.round(normalized * BAR_MAX_H));
-                    return (
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: h,
-                            backgroundColor: '#7C6BF8',
-                          },
-                        ]}
-                      />
-                    );
-                  })()}
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height: Math.max(
+                          BAR_MIN_H,
+                          Math.round(
+                            ((group.score - scoreLowerBound) / Math.max(scoreUpperBound - scoreLowerBound, 1)) * BAR_MAX_H
+                          )
+                        ),
+                        backgroundColor: '#7C6BF8',
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height: Math.max(
+                          BAR_MIN_H,
+                          Math.round(
+                            ((group.spending - spendingLowerBound) /
+                              Math.max(spendingUpperBound - spendingLowerBound, 1)) *
+                              BAR_MAX_H
+                          )
+                        ),
+                        backgroundColor: '#D4C5F0',
+                      },
+                    ]}
+                  />
                 </View>
                 <Text style={styles.chartLabel}>{group.month}</Text>
               </View>
@@ -392,20 +405,14 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: 20,
     paddingVertical: 8,
     alignItems: 'center',
   },
-  tabActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  tabText: {
+  tabTextFixed: {
     fontSize: 16,
-    fontFamily: Fonts.sans,
-    color: '#07004D',
-  },
-  tabTextActive: {
     fontFamily: Fonts.rounded,
+    color: '#07004D',
   },
   chartWrap: {
     flexDirection: 'row',
@@ -428,6 +435,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
+    gap: 8,
   },
   bar: {
     width: 30,

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Alert,
-  Image,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { signOut } from 'firebase/auth';
+import { LinearGradient } from 'expo-linear-gradient';
 import { auth } from '@/constants/firebase';
 import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,8 +19,7 @@ import BetaBadge from '@/assets/images/test/beta.svg';
 import SigmaBadge from '@/assets/images/test/sigma.svg';
 import LogoutIcon from '@/assets/images/profile/logout_icon.svg';
 import { useUserRank } from '@/hooks/useUserRank';
-
-const circleBg = require('@/assets/images/home/Circle_Background_Home.png');
+import CircleBgExpenses from '@/assets/images/expenses/Circle_Background_Expenses.svg';
 
 // Rank tiers — each tier needs `xpRequired` total XP to reach
 const RANKS = [
@@ -97,7 +97,9 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
+      <View style={styles.topBg}>
+        <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
+      </View>
 
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.headerTitle}>Profile</Text>
@@ -106,11 +108,17 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Badge + rank */}
         <View style={styles.badgeSection}>
-          <View style={styles.badgeCircle}>
-            <BadgeIcon width={90} height={90} />
+          <View style={styles.badgeRing}>
+            <View style={styles.badgeCircle}>
+              <BadgeIcon width={114} height={110} />
+            </View>
           </View>
           <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
 
@@ -123,19 +131,32 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        {/* Weekly Quests */}
-        <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} />
+        <View style={styles.questsSection}>
+          {/* Weekly Quests */}
+          <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} tone="weekly" />
 
-        {/* Monthly Quests */}
-        <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} />
-      </View>
+          {/* Monthly Quests */}
+          <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} tone="monthly" />
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
-function QuestCard({ title, quests, completed }: { title: string; quests: Quest[]; completed: string[] }) {
-  return (
-    <View style={styles.questCard}>
+function QuestCard({
+  title,
+  quests,
+  completed,
+  tone,
+}: {
+  title: string;
+  quests: Quest[];
+  completed: string[];
+  tone: 'weekly' | 'monthly';
+}) {
+  const isMonthly = tone === 'monthly';
+  const cardInner = (
+    <>
       <Text style={styles.questTitle}>{title}</Text>
       <View style={styles.questRow}>
         {quests.map((q, i) => {
@@ -152,6 +173,24 @@ function QuestCard({ title, quests, completed }: { title: string; quests: Quest[
           );
         })}
       </View>
+    </>
+  );
+
+  if (isMonthly) {
+    return (
+      <LinearGradient
+        colors={['#FFFFFF', '#F2E7FF']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={[styles.questCard, styles.questCardMonthly]}>
+        {cardInner}
+      </LinearGradient>
+    );
+  }
+
+  return (
+    <View style={[styles.questCard, styles.questCardWeekly]}>
+      {cardInner}
     </View>
   );
 }
@@ -169,16 +208,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F4F0FA',
   },
-  circleBg: {
+  topBg: {
     position: 'absolute',
-    top: -140,
-    alignSelf: 'center',
-    width: 400,
-    height: 400,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 320,
   },
 
   header: {
-    paddingBottom: 28,
+    paddingBottom: 20,
     paddingHorizontal: 24,
     flexDirection: 'row',
     alignItems: 'center',
@@ -193,79 +232,100 @@ const styles = StyleSheet.create({
   logoutIcon: {
     position: 'absolute',
     right: 24,
-    top: 45,
+    top: 14,
     bottom: 0,
     justifyContent: 'center',
     padding: 4,
   },
 
-  content: {
+  scroll: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: 24,
+    paddingTop: 20,
   },
 
   // Badge + rank
   badgeSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 10,
+    top: 40,
+  },
+  badgeRing: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
   },
   badgeCircle: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: '#5F4BF5',
-    borderWidth: 4,
-    borderColor: '#fff',
+    borderWidth: 5,
+    borderColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   rankName: {
-    fontSize: 32,
+    fontSize: 35.8,
     fontFamily: Fonts.rounded,
     color: '#07004D',
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 14,
+    marginTop: 6,
+    marginBottom: 6,
   },
   progressTrack: {
-    width: '70%',
-    height: 8,
+    width: '75%',
+    height: 7,
     backgroundColor: '#E8DDFA',
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   progressFill: {
-    height: 8,
-    backgroundColor: '#07004D',
+    height: 7,
+    backgroundColor: '#5F4BF5',
     borderRadius: 4,
   },
   xpRemaining: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: Fonts.sans,
-    color: '#888',
+    color: '#07004D',
   },
 
   // Quest cards
   questCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 18,
     marginBottom: 16,
-    height: 175,
     ...CARD_SHADOW,
   },
+  questsSection: {
+    top: 55,
+  },
+  questCardWeekly: {
+    backgroundColor: '#FFFFFF',
+  },
+  questCardMonthly: {
+    backgroundColor: 'transparent',
+  },
   questTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: Fonts.rounded,
     color: '#07004D',
-    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 18,
+    marginBottom: 14,
   },
   questRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 14,
   },
   questItem: {
     flex: 1,
@@ -273,24 +333,28 @@ const styles = StyleSheet.create({
   },
   xpBadge: {
     backgroundColor: '#D4C5F0',
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 22,
     marginBottom: 10,
+    shadowColor: '#7B2FBE',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   xpBadgeText: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: Fonts.rounded,
     color: '#07004D',
-    fontWeight: '700',
   },
   questDesc: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: Fonts.sans,
-    color: '#555',
+    color: '#07004D',
     textAlign: 'center',
-    lineHeight: 16,
-    maxWidth: 110,
+    lineHeight: 17,
+    maxWidth: 130,
   },
   questDescDone: {
     color: '#4CAF50',
