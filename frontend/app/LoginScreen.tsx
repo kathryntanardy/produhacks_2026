@@ -10,7 +10,7 @@ import {
     View,
 } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth } from '../constants/firebase';
 
 type Props = {
     onGoToSignup: () => void;

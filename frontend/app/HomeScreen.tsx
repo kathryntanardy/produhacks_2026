@@ -9,11 +9,11 @@ import {
     View,
 } from 'react-native';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth } from '../constants/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function HomeScreen() {
-    const { user } = useAuth();
+    const { user, backendUser } = useAuth();
 
     const handleLogout = async () => {
         try {
@@ -28,6 +28,8 @@ export default function HomeScreen() {
             <View style={styles.card}>
                 <Text style={styles.title}>You are logged in</Text>
                 <Text style={styles.email}>{user?.email}</Text>
+                <Text style={styles.backendText}>Backend ID: {backendUser?.id ?? 'syncing...'}</Text>
+                <Text style={styles.backendText}>Rank: {backendUser?.rank ?? 0}</Text>
 
                 <TouchableOpacity style={styles.button} onPress={handleLogout}>
                     <Text style={styles.buttonText}>Log Out</Text>
@@ -58,7 +60,12 @@ const styles = StyleSheet.create({
     email: {
         fontSize: 16,
         color: '#666',
-        marginBottom: 24,
+        marginBottom: 8,
+    },
+    backendText: {
+        fontSize: 14,
+        color: '#555',
+        marginBottom: 4,
     },
     button: {
         backgroundColor: '#111',

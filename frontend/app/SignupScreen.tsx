@@ -9,21 +9,24 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '../constants/firebase';
+import { useAuth } from '../contexts/AuthContext';
 
 type Props = {
     onGoToLogin: () => void;
 };
 
 export default function SignupScreen({ onGoToLogin }: Props) {
+    const { syncBackendUser } = useAuth();
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
     const handleSignup = async () => {
-        if (!email || !password || !confirmPassword) {
+        if (!name.trim() || !email || !password || !confirmPassword) {
             Alert.alert('Missing fields', 'Please fill in all fields.');
             return;
         }
@@ -40,7 +43,9 @@ export default function SignupScreen({ onGoToLogin }: Props) {
 
         try {
             setSubmitting(true);
-            await createUserWithEmailAndPassword(auth, email.trim(), password);
+            const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+            await updateProfile(userCredential.user, { displayName: name.trim() });
+            await syncBackendUser();
         } catch (error: any) {
             Alert.alert('Signup failed', error.message || 'Something went wrong.');
         } finally {
@@ -53,6 +58,13 @@ export default function SignupScreen({ onGoToLogin }: Props) {
             <View style={styles.card}>
                 <Text style={styles.title}>Create account</Text>
                 <Text style={styles.subtitle}>Sign up to get started</Text>
+
+                <TextInput
+                    style={styles.input}
+                    placeholder="Full Name"
+                    value={name}
+                    onChangeText={setName}
+                />
 
                 <TextInput
                     style={styles.input}
