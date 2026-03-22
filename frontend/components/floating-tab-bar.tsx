@@ -14,7 +14,7 @@ const BOTTOM_MARGIN = 27;
 export function FloatingTabBar(props: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
-  // 27px from the physical bottom edge of the screen (not above the safe area inset)
+  // 27px from the physical bottom edge of the screen
   const bottomOffset = BOTTOM_MARGIN;
 
   // BottomTabBar adds paddingBottom: insets.bottom by default — that pushed icons up inside the pill.
