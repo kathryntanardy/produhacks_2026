@@ -8,13 +8,18 @@ import firebase_admin
 app = Flask(__name__)
 CORS(app)
 
+# 🔥 Your existing PostgreSQL DB
 app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://kathryntanardy@localhost/credit_app"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 db = SQLAlchemy(app)
 
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
+# 🔥 Initialize Firebase Admin (ONLY ONCE)
+if not firebase_admin._apps:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
 
+# 🔥 Match EXISTING table schema
 class User(db.Model):
     __tablename__ = "users"
 
@@ -24,9 +29,11 @@ class User(db.Model):
     email = db.Column(db.String(150), unique=True)
     rank = db.Column(db.Integer, default=0)
 
-@app.route("/auth/google", methods=["POST"])
-def auth_google():
+# 🔥 Universal Firebase Auth Endpoint (NOT Google-specific)
+@app.route("/auth/firebase", methods=["POST"])
+def auth_firebase():
     auth_header = request.headers.get("Authorization", "")
+
     if not auth_header.startswith("Bearer "):
         return jsonify({"error": "Missing bearer token"}), 401
 
@@ -39,24 +46,30 @@ def auth_google():
 
     firebase_uid = decoded_token.get("uid")
     email = decoded_token.get("email")
-    name = decoded_token.get("name")
+    name = decoded_token.get("name")  # might be None
 
+    # 🔍 Check existing user
     user = User.query.filter_by(firebase_uid=firebase_uid).first()
 
     if not user:
+        # ✅ New user → insert
         user = User(
             firebase_uid=firebase_uid,
-            name=name,
+            name=name if name else "",   # avoid None
             email=email,
             rank=0
         )
         db.session.add(user)
         db.session.commit()
+
     else:
-        if name:
+        # ✅ Existing user → update safely
+        if name and name != user.name:
             user.name = name
-        if email:
+
+        if email and email != user.email:
             user.email = email
+
         db.session.commit()
 
     return jsonify({
@@ -69,6 +82,11 @@ def auth_google():
             "rank": user.rank,
         }
     }), 200
+
+# 🔥 Test route
+@app.route("/api/me", methods=["GET"])
+def test():
+    return jsonify({"status": "backend running"})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
