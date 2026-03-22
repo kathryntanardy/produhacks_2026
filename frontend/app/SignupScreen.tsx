@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import {
     Alert,
     SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -10,7 +11,10 @@ import {
     View,
 } from 'react-native';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { router } from 'expo-router';
+import { PrimaryButton } from '../components/ui/primary-button';
 import { auth } from '../constants/firebase';
+import { Fonts } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 
 type Props = {
@@ -19,14 +23,13 @@ type Props = {
 
 export default function SignupScreen({ onGoToLogin }: Props) {
     const { syncBackendUser } = useAuth();
-    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
     const handleSignup = async () => {
-        if (!name.trim() || !email || !password || !confirmPassword) {
+        if (!email || !password || !confirmPassword) {
             Alert.alert('Missing fields', 'Please fill in all fields.');
             return;
         }
@@ -44,8 +47,10 @@ export default function SignupScreen({ onGoToLogin }: Props) {
         try {
             setSubmitting(true);
             const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-            await updateProfile(userCredential.user, { displayName: name.trim() });
+            const derivedName = email.trim().split('@')[0];
+            await updateProfile(userCredential.user, { displayName: derivedName });
             await syncBackendUser();
+            router.replace('/signup-questions/1');
         } catch (error: any) {
             Alert.alert('Signup failed', error.message || 'Something went wrong.');
         } finally {
@@ -55,56 +60,55 @@ export default function SignupScreen({ onGoToLogin }: Props) {
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.card}>
-                <Text style={styles.title}>Create account</Text>
-                <Text style={styles.subtitle}>Sign up to get started</Text>
+            <ScrollView contentContainerStyle={styles.content}>
+                <Text style={styles.brand} allowFontScaling={false}>Credify</Text>
+                <Text style={styles.welcome} allowFontScaling={false}>Welcome</Text>
+                <Text style={styles.copy} allowFontScaling={false}>We are excited that you are joining us on this journey.</Text>
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Full Name"
-                    value={name}
-                    onChangeText={setName}
-                />
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle} allowFontScaling={false}>Create an Account</Text>
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Email Address"
+                        placeholderTextColor="#D4D4D8"
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        value={email}
+                        onChangeText={setEmail}
+                    />
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Password"
+                        placeholderTextColor="#D4D4D8"
+                        secureTextEntry
+                        value={password}
+                        onChangeText={setPassword}
+                    />
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Confirm Password"
-                    secureTextEntry
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Re-enter Password"
+                        placeholderTextColor="#D4D4D8"
+                        secureTextEntry
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                    />
 
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={handleSignup}
-                    disabled={submitting}
-                >
-                    <Text style={styles.buttonText}>
-                        {submitting ? 'Creating account...' : 'Sign Up'}
-                    </Text>
-                </TouchableOpacity>
+                    <TouchableOpacity onPress={onGoToLogin}>
+                        <Text style={styles.link} allowFontScaling={false}>Already have an account?</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity onPress={onGoToLogin}>
-                    <Text style={styles.link}>Already have an account? Log in</Text>
-                </TouchableOpacity>
-            </View>
+                    <PrimaryButton
+                        content={submitting ? 'Creating Account...' : 'Create Account'}
+                        width="100%"
+                        onPress={handleSignup}
+                        disabled={submitting}
+                        style={styles.button}
+                    />
+                </View>
+            </ScrollView>
         </SafeAreaView>
     );
 }
@@ -112,49 +116,68 @@ export default function SignupScreen({ onGoToLogin }: Props) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        justifyContent: 'center',
-        padding: 20,
-        backgroundColor: '#f7f7f7',
+        backgroundColor: '#FFFFFF',
     },
-    card: {
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 20,
+    content: {
+        paddingHorizontal: 24,
+        paddingTop: 28,
+        paddingBottom: 32,
     },
-    title: {
-        fontSize: 28,
-        fontWeight: '700',
+    brand: {
+        textAlign: 'center',
+        fontSize: 36,
+        color: '#0A0A72',
+        fontFamily: Fonts.rounded,
+        marginBottom: 46,
+    },
+    welcome: {
+        fontSize: 16,
+        color: '#0A0A72',
+        fontFamily: Fonts.rounded,
         marginBottom: 8,
     },
-    subtitle: {
+    copy: {
         fontSize: 16,
-        color: '#666',
-        marginBottom: 20,
+        fontFamily: Fonts.sans,
+        lineHeight: 26,
+        color: '#7F68FF',
+        maxWidth: 280,
+    },
+    card: {
+        marginTop: 82,
+        backgroundColor: 'white',
+        borderRadius: 2,
+        paddingHorizontal: 24,
+        paddingVertical: 22,
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 3,
+    },
+    cardTitle: {
+        fontSize: 14,
+        fontFamily: Fonts.rounded,
+        color: '#0A0A72',
+        marginBottom: 24,
     },
     input: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        marginBottom: 12,
-        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#2A2A85',
+        paddingHorizontal: 0,
+        paddingVertical: 10,
+        marginBottom: 18,
+        fontSize: 14,
+        fontFamily: Fonts.sans,
     },
     button: {
-        backgroundColor: '#111',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
         marginTop: 8,
-        marginBottom: 14,
-    },
-    buttonText: {
-        color: 'white',
-        fontWeight: '600',
     },
     link: {
-        textAlign: 'center',
-        color: '#2563eb',
-        fontWeight: '500',
+        color: '#0A0A72',
+        fontFamily: Fonts.rounded,
+        textDecorationLine: 'underline',
+        marginBottom: 14,
+        fontSize: 14,
     },
 });

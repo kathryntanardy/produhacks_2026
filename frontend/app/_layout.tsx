@@ -1,4 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Urbanist_400Regular, Urbanist_700Bold, useFonts } from '@expo-google-fonts/urbanist';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -6,6 +7,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -23,7 +25,7 @@ function AuthGuardStack() {
     const isAuthRoute = pathname === '/login' || pathname === '/signup';
 
     if (!user && !isAuthRoute) {
-      router.replace('/login');
+      router.replace('/signup');
       return;
     }
 
@@ -41,9 +43,13 @@ function AuthGuardStack() {
   }
 
   return (
-    <Stack>
+    <Stack
+      screenOptions={{
+        headerTitleStyle: { fontFamily: Fonts.rounded },
+      }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="signup" options={{ headerShown: false }} />
+      <Stack.Screen name="signup-questions/[step]" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
     </Stack>
@@ -52,6 +58,18 @@ function AuthGuardStack() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [fontsLoaded] = useFonts({
+    Urbanist_400Regular,
+    Urbanist_700Bold,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

@@ -1,37 +1,59 @@
-// screens/LoginScreen.tsx
+// screens/SignupScreen.tsx
 import React, { useState } from 'react';
 import {
     Alert,
     SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth } from '../constants/firebase';
+import { Fonts } from '../constants/theme';
+import { useAuth } from '../contexts/AuthContext';
 
 type Props = {
-    onGoToSignup: () => void;
+    onGoToLogin: () => void;
 };
 
-export default function LoginScreen({ onGoToSignup }: Props) {
+export default function SignupScreen({ onGoToLogin }: Props) {
+    const { syncBackendUser } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
-    const handleLogin = async () => {
-        if (!email || !password) {
-            Alert.alert('Missing fields', 'Please enter your email and password.');
+    const handleSignup = async () => {
+        if (!email || !password || !confirmPassword) {
+            Alert.alert('Missing fields', 'Please fill in all fields.');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            Alert.alert('Password mismatch', 'Passwords do not match.');
+            return;
+        }
+
+        if (password.length < 6) {
+            Alert.alert('Weak password', 'Password must be at least 6 characters.');
             return;
         }
 
         try {
             setSubmitting(true);
-            await signInWithEmailAndPassword(auth, email.trim(), password);
+            const userCredential = await createUserWithEmailAndPassword(
+                auth,
+                email.trim(),
+                password
+            );
+            const derivedName = email.trim().split('@')[0];
+            await updateProfile(userCredential.user, { displayName: derivedName });
+            await syncBackendUser();
         } catch (error: any) {
-            Alert.alert('Login failed', error.message || 'Something went wrong.');
+            Alert.alert('Signup failed', error.message || 'Something went wrong.');
         } finally {
             setSubmitting(false);
         }
@@ -39,41 +61,65 @@ export default function LoginScreen({ onGoToSignup }: Props) {
 
     return (
         <SafeAreaView style={styles.container}>
-            <View style={styles.card}>
-                <Text style={styles.title}>Welcome back</Text>
-                <Text style={styles.subtitle}>Log in to continue</Text>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
+                <Text style={styles.brand}>Credify</Text>
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                />
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                />
-
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={handleLogin}
-                    disabled={submitting}
-                >
-                    <Text style={styles.buttonText}>
-                        {submitting ? 'Logging in...' : 'Log In'}
+                <View style={styles.headerBlock}>
+                    <Text style={styles.welcome}>Welcome</Text>
+                    <Text style={styles.copy}>
+                        We are excited that you are joining us on this journey.
                     </Text>
-                </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity onPress={onGoToSignup}>
-                    <Text style={styles.link}>Don’t have an account? Sign up</Text>
-                </TouchableOpacity>
-            </View>
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Create an Account</Text>
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Email Address"
+                        placeholderTextColor="#D4D4D8"
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        value={email}
+                        onChangeText={setEmail}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Password"
+                        placeholderTextColor="#D4D4D8"
+                        secureTextEntry
+                        value={password}
+                        onChangeText={setPassword}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Re-enter Password"
+                        placeholderTextColor="#D4D4D8"
+                        secureTextEntry
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                    />
+
+                    <TouchableOpacity onPress={onGoToLogin}>
+                        <Text style={styles.link}>Already have an account?</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.button}
+                        onPress={handleSignup}
+                        disabled={submitting}
+                    >
+                        <Text style={styles.buttonText}>
+                            {submitting ? 'Creating Account...' : 'Create Account'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
         </SafeAreaView>
     );
 }
@@ -81,49 +127,83 @@ export default function LoginScreen({ onGoToSignup }: Props) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        justifyContent: 'center',
-        padding: 20,
-        backgroundColor: '#f7f7f7',
+        backgroundColor: '#FFFFFF',
     },
-    card: {
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 20,
+    content: {
+        paddingHorizontal: 24,
+        paddingTop: 40,
+        paddingBottom: 32,
     },
-    title: {
-        fontSize: 28,
-        fontWeight: '700',
+    brand: {
+        textAlign: 'center',
+        fontSize: 50,
+        color: '#07004D',
+        fontFamily: Fonts.rounded,
+        marginTop: 20,
+        marginBottom: 56,
+    },
+    headerBlock: {
+        paddingHorizontal: 8,
+    },
+    welcome: {
+        fontSize: 22,
+        color: '#07004D',
+        fontFamily: Fonts.rounded,
         marginBottom: 8,
     },
-    subtitle: {
-        fontSize: 16,
-        color: '#666',
-        marginBottom: 20,
+    copy: {
+        fontSize: 13,
+        lineHeight: 20,
+        fontFamily: Fonts.sans,
+        color: '#8569F4',
+        maxWidth: 230,
+    },
+    card: {
+        marginTop: 72,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 2,
+        paddingHorizontal: 26,
+        paddingTop: 22,
+        paddingBottom: 24,
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 3,
+    },
+    cardTitle: {
+        fontSize: 18,
+        fontFamily: Fonts.rounded,
+        color: '#07004D',
+        marginBottom: 28,
     },
     input: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        marginBottom: 12,
-        backgroundColor: '#fff',
-    },
-    button: {
-        backgroundColor: '#111',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginTop: 8,
-        marginBottom: 14,
-    },
-    buttonText: {
-        color: 'white',
-        fontWeight: '600',
+        borderBottomWidth: 1,
+        borderBottomColor: '#8E84BF',
+        paddingHorizontal: 0,
+        paddingVertical: 10,
+        marginBottom: 22,
+        fontSize: 14,
+        color: '#07004D',
+        fontFamily: Fonts.sans,
     },
     link: {
-        textAlign: 'center',
-        color: '#2563eb',
-        fontWeight: '500',
+        color: '#07004D',
+        fontFamily: Fonts.rounded,
+        textDecorationLine: 'underline',
+        marginBottom: 18,
+        fontSize: 14,
+    },
+    button: {
+        backgroundColor: '#07004D',
+        paddingVertical: 13,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 6,
+    },
+    buttonText: {
+        color: '#FFFFFF',
+        fontFamily: Fonts.rounded,
+        fontSize: 15,
     },
 });

@@ -21,6 +21,8 @@ from plaid.model.country_code import CountryCode
 
 from auth_middleware import firebase_auth_required
 from firebase_admin_init import initialize_firebase
+from sqlalchemy.dialects.postgresql import ARRAY
+
 
 load_dotenv()
 
@@ -31,7 +33,7 @@ app = Flask(__name__)
 CORS(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL", "postgresql://verrill@localhost/credit_app"
+    "DATABASE_URL", "postgresql://kathryntanardy@localhost/credit_app"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -42,6 +44,14 @@ ANALYTICS_AGENT_URL = os.getenv("ANALYTICS_AGENT_URL", "http://127.0.0.1:8001/an
 EXPLANATION_AGENT_URL = os.getenv("EXPLANATION_AGENT_URL", "http://127.0.0.1:8002/explain")
 CHATBOX_AGENT_URL = os.getenv("CHATBOX_AGENT_URL", "http://127.0.0.1:8003/chat")
 
+ALLOWED_INCOME_RANGES = {
+    "$0 to $19,999",
+    "$20,000 to $39,999",
+    "$40,000 to $59,999",
+    "$60,000 to $79,999",
+    "$80,000 to $99,999",
+    "$100,000 or more",
+}
 
 class User(db.Model):
     __tablename__ = "users"
@@ -55,6 +65,8 @@ class User(db.Model):
     credit_score = db.Column(JSONB, nullable=False, server_default="{}")
     credit_limit = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     balance = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    goals = db.Column(ARRAY(db.String), nullable=False, default=list)
+    annual_income = db.Column(db.String(50))
 
     transactions = db.relationship(
         "Transaction",
@@ -132,6 +144,8 @@ def auth_firebase():
             "credit_score": user.credit_score or {},
             "credit_limit": float(user.credit_limit),
             "balance": float(user.balance),
+            "goals": user.goals or [],
+            "annual_income": user.annual_income,
         }
     }), 200
 
@@ -152,6 +166,8 @@ def me():
         "credit_score": user.credit_score or {},
         "credit_limit": float(user.credit_limit),
         "balance": float(user.balance),
+        "goals": user.goals or [],
+        "annual_income": user.annual_income,
     })
 
 # TODO: Add toast for payment and spending
@@ -331,7 +347,69 @@ def chat():
         return jsonify(response.json()), response.status_code
     except requests.RequestException as e:
         return jsonify({"error": f"Chatbox agent unavailable: {str(e)}"}), 500
+    
+@app.route("/api/goals", methods=["POST"])
+@firebase_auth_required
+def update_goals():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
 
+    data = request.get_json(silent=True) or {}
+    goals = data.get("goals")
+
+    if not isinstance(goals, list):
+        return jsonify({"error": "goals must be an array of strings"}), 400
+
+    if len(goals) > 2:
+        return jsonify({"error": "You can select at most 2 goals"}), 400
+
+    if not all(isinstance(goal, str) and goal.strip() for goal in goals):
+        return jsonify({"error": "Each goal must be a non-empty string"}), 400
+
+    user.goals = goals
+    db.session.commit()
+
+    return jsonify({
+        "message": "Goals updated",
+        "goals": user.goals,
+    }), 200
+
+@app.route("/api/goals", methods=["GET"])
+@firebase_auth_required
+def get_goals():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    return jsonify({
+        "user_id": user.id,
+        "goals": user.goals or [],
+    }), 200
+
+@app.route("/api/annual-income", methods=["POST"])
+@firebase_auth_required
+def update_annual_income():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    data = request.get_json(silent=True) or {}
+    income = data.get("annual_income")
+
+    if not income:
+        return jsonify({"error": "annual_income is required"}), 400
+
+    if income not in ALLOWED_INCOME_RANGES:
+        return jsonify({"error": "Invalid income range"}), 400
+
+    user.annual_income = income
+    db.session.commit()
+
+    return jsonify({
+        "message": "Annual income updated",
+        "annual_income": user.annual_income,
+    }), 200
 
 with app.app_context():
     db.create_all()
