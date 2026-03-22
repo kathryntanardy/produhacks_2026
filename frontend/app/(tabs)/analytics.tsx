@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,8 +13,9 @@ import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import CircleBgExpenses from '@/assets/images/expenses/Circle_Background_Expenses.svg';
 
-const TABS = ['Score', 'Spending'] as const;
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
+const TABS = ['Score', 'Spending'] as const;
+type ChartTab = (typeof TABS)[number];
 
 const LEGEND = [
   { label: '300 - 659', color: '#F44336' },
@@ -72,6 +74,7 @@ export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ChartTab>('Score');
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -108,37 +111,30 @@ export default function AnalyticsScreen() {
     ? report.score_series
     : [fallbackPrev * 0.9, fallbackPrev, fallbackLatest];
   const spendingSeries = report?.spending_series?.length ? report.spending_series : [450, 520, 410];
-  const utilizationSeries = report?.utilization_series?.length ? report.utilization_series : [28, 34, 25];
 
-  const chartData = useMemo(() => {
-    const maxScore = Math.max(...scoreSeries, 1);
-    const maxSpending = Math.max(...spendingSeries, 1);
-    const BAR_MAX_H = 120;
-
-    return monthItems.map((monthItem, i) => {
-      const score = Number(scoreSeries[i] ?? 0);
-      const spending = Number(spendingSeries[i] ?? 0);
-
-      return {
-        key: monthItem.key || `${monthItem.label}-${i}`,
-        month: monthItem.label,
-        metrics: [
-          {
-            id: 'score',
-            height: Math.max(6, Math.round((score / maxScore) * BAR_MAX_H)),
-            color: '#5F4BF5',
-            valueText: `${Math.round(score)}`,
-          },
-          {
-            id: 'spending',
-            height: Math.max(6, Math.round((spending / maxSpending) * BAR_MAX_H)),
-            color: '#7C6BF8',
-            valueText: `$${Math.round(spending)}`,
-          },
-        ],
-      };
-    });
-  }, [monthItems, scoreSeries, spendingSeries]);
+  const selectedSeries = activeTab === 'Score' ? scoreSeries : spendingSeries;
+  const chartData = useMemo(
+    () =>
+      monthItems.map((monthItem, i) => {
+        const value = Number(selectedSeries[i] ?? 0);
+        return {
+          key: monthItem.key || `${monthItem.label}-${i}`,
+          month: monthItem.label,
+          bar: value,
+          valueText: activeTab === 'Score' ? `${Math.round(value)}` : `$${Math.round(value)}`,
+        };
+      }),
+    [monthItems, selectedSeries, activeTab]
+  );
+  const seriesValues = chartData.map((d) => d.bar);
+  const minBar = Math.min(...seriesValues);
+  const maxBar = Math.max(...seriesValues, 1);
+  const rawRange = Math.max(maxBar - minBar, 1);
+  // Visual zoom: tighten y-range so month-to-month differences are clearer.
+  const chartLowerBound = Math.max(0, minBar - rawRange * 0.25);
+  const chartUpperBound = maxBar + rawRange * 0.15;
+  const BAR_MAX_H = 120;
+  const BAR_MIN_H = 10;
   const latestScore = report?.latest_score ?? fallbackLatest;
   const dateStr = report?.latest_date ?? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const currentMonth = report?.current_month_label ?? 'Mar';
@@ -149,6 +145,7 @@ export default function AnalyticsScreen() {
   const spendStat = formatPct(report?.spending_change_pct ?? 0, true);
   const utilStat = formatPct(report?.utilization_change_pct ?? 0, true);
   const insightItems = report?.insights?.length ? report.insights : FALLBACK_INSIGHTS;
+  const visibleInsights = insightItems.slice(0, 2);
   const habitTitle = report?.habit_builder_title ?? 'Habit Builder';
   const habitMessage =
     report?.habit_builder_message ??
@@ -175,116 +172,121 @@ export default function AnalyticsScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 72 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Tab selector */}
-        <View style={styles.tabBar}>
-          {TABS.map((tab) => (
-            <View key={tab} style={styles.tab}>
-              <Text style={styles.tabTextStatic}>{tab}</Text>
-            </View>
-          ))}
-        </View>
+        <View style={styles.chartCard}>
+          <View style={styles.tabBar}>
+            {TABS.map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, activeTab === tab && styles.tabActive]}
+                onPress={() => setActiveTab(tab)}>
+                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        {/* Bar chart: left=score, middle=spending, right=utilization */}
-        <View style={styles.chartWrap}>
-          {chartData.map((group) => (
-            <View key={group.key} style={styles.chartGroup}>
-              <View style={styles.barGroup}>
-                {group.metrics.map((metric) => {
-                  return (
-                    <View key={metric.id} style={styles.metricCol}>
-                      <Text style={styles.metricValue}>{metric.valueText}</Text>
+          <View style={styles.chartWrap}>
+            {chartData.map((group) => (
+              <View key={group.key} style={styles.chartGroup}>
+                <Text style={styles.metricValue}>{group.valueText}</Text>
+                <View style={styles.barGroup}>
+                  {(() => {
+                    const normalized = (group.bar - chartLowerBound) / Math.max(chartUpperBound - chartLowerBound, 1);
+                    const h = Math.max(BAR_MIN_H, Math.round(normalized * BAR_MAX_H));
+                    return (
                       <View
                         style={[
                           styles.bar,
                           {
-                            height: metric.height,
-                            backgroundColor: metric.color,
+                            height: h,
+                            backgroundColor: '#7C6BF8',
                           },
                         ]}
                       />
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={styles.chartLabel}>{group.month}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Monthly Report */}
-        <View style={styles.reportCard}>
-          <Text style={styles.reportTitle}>{currentMonth} Report</Text>
-
-          <View style={styles.reportRow}>
-            <View style={[styles.scoreBox, { borderColor: scoreColor(prevScore ?? 0) }]}>
-              <Text style={[styles.scoreBoxNum, { color: scoreColor(prevScore ?? 0) }]}>
-                {prevScore ?? '—'}
-              </Text>
-              <Text style={styles.scoreBoxLabel}>{prevMonth}</Text>
-              <Text style={styles.scoreBoxSub}>Credit Score</Text>
-            </View>
-
-            <Text style={styles.arrow}>→</Text>
-
-            <View style={[styles.scoreBox, { borderColor: scoreColor(latestScore ?? 0) }]}>
-              <Text style={[styles.scoreBoxNum, { color: scoreColor(latestScore ?? 0) }]}>
-                {latestScore ?? '—'}
-              </Text>
-              <Text style={styles.scoreBoxLabel}>{currentMonth.slice(0, 3)}</Text>
-              <Text style={styles.scoreBoxSub}>Credit Score</Text>
-            </View>
-          </View>
-
-          {/* Legend */}
-          <View style={styles.legendRow}>
-            {LEGEND.map((l) => (
-              <View key={l.label} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: l.color }]} />
-                <Text style={styles.legendText}>{l.label}</Text>
+                    );
+                  })()}
+                </View>
+                <Text style={styles.chartLabel}>{group.month}</Text>
               </View>
             ))}
           </View>
         </View>
 
-        {/* Stats row */}
-        <View style={styles.statsCard}>
-          <StatItem
-            label="Credit Score"
-            value={scoreStat.text}
-            positive={scoreStat.positive}
-          />
-          <StatItem
-            label="Spending"
-            value={spendStat.text}
-            positive={spendStat.positive}
-          />
-          <StatItem
-            label="Utilization"
-            value={utilStat.text}
-            positive={utilStat.positive}
-          />
-        </View>
+        <View style={[styles.analysisSection, { paddingBottom: insets.bottom + 44 }]}>
+          {/* Monthly Report */}
+          <View style={styles.reportCard}>
+            <Text style={styles.reportTitle}>{currentMonth} Report</Text>
 
-        {insightItems.map((item, idx) => (
-          <View
-            key={`${item.text}-${idx}`}
-            style={[styles.insightCard, item.type === 'positive' ? styles.insightPositive : styles.insightWarning]}
-          >
-            <View style={[styles.insightIcon, item.type === 'positive' ? styles.iconPositive : styles.iconWarning]}>
-              <Text style={[styles.insightIconText, item.type === 'positive' ? styles.iconTextPositive : styles.iconTextWarning]}>
-                {item.type === 'positive' ? 'O' : 'X'}
-              </Text>
+            <View style={styles.reportRow}>
+              <View style={[styles.scoreBox, { borderColor: scoreColor(prevScore ?? 0) }]}>
+                <Text style={[styles.scoreBoxNum, { color: scoreColor(prevScore ?? 0) }]}>
+                  {prevScore ?? '—'}
+                </Text>
+                <Text style={styles.scoreBoxLabel}>{prevMonth}</Text>
+                <Text style={styles.scoreBoxSub}>Credit Score</Text>
+              </View>
+
+              <Text style={styles.arrow}>→</Text>
+
+              <View style={[styles.scoreBox, { borderColor: scoreColor(latestScore ?? 0) }]}>
+                <Text style={[styles.scoreBoxNum, { color: scoreColor(latestScore ?? 0) }]}>
+                  {latestScore ?? '—'}
+                </Text>
+                <Text style={styles.scoreBoxLabel}>{currentMonth.slice(0, 3)}</Text>
+                <Text style={styles.scoreBoxSub}>Credit Score</Text>
+              </View>
             </View>
-            <Text style={styles.insightText}>{item.text}</Text>
-          </View>
-        ))}
 
-        <View style={styles.habitCard}>
-          <Text style={styles.habitTitle}>{habitTitle}</Text>
-          <Text style={styles.habitMessage}>{habitMessage}</Text>
+            {/* Legend */}
+            <View style={styles.legendRow}>
+              {LEGEND.map((l) => (
+                <View key={l.label} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: l.color }]} />
+                  <Text style={styles.legendText}>{l.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Stats row */}
+          <View style={styles.statsCard}>
+            <StatItem
+              label="Credit Score"
+              value={scoreStat.text}
+              positive={scoreStat.positive}
+            />
+            <StatItem
+              label="Spending"
+              value={spendStat.text}
+              positive={spendStat.positive}
+            />
+            <StatItem
+              label="Utilization"
+              value={utilStat.text}
+              positive={utilStat.positive}
+            />
+          </View>
+
+          {visibleInsights.map((item, idx) => (
+            <View
+              key={`${item.text}-${idx}`}
+              style={[styles.insightCard, item.type === 'positive' ? styles.insightPositive : styles.insightWarning]}
+            >
+              <View style={[styles.insightIcon, item.type === 'positive' ? styles.iconPositive : styles.iconWarning]}>
+                <Text style={[styles.insightIconText, item.type === 'positive' ? styles.iconTextPositive : styles.iconTextWarning]}>
+                  {item.type === 'positive' ? 'O' : 'X'}
+                </Text>
+              </View>
+              <Text style={styles.insightText}>{item.text}</Text>
+            </View>
+          ))}
+
+          <View style={styles.habitCard}>
+            <Text style={styles.habitTitle}>{habitTitle}</Text>
+            <Text style={styles.habitMessage}>{habitMessage}</Text>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -354,69 +356,88 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  scroll: { flex: 1 },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 160,
+    flexGrow: 1,
   },
 
-  // Tab bar
+  chartCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 12,
+    ...CARD_SHADOW,
+  },
+  analysisSection: {
+    marginTop: 8,
+    marginBottom: 0,
+    marginHorizontal: -24,
+    backgroundColor: '#EEEEEE',
+    borderTopLeftRadius: 34,
+    borderTopRightRadius: 34,
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    flex: 1,
+  },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 24,
+    backgroundColor: '#F4F3FF',
+    borderRadius: 26,
     padding: 4,
-    marginBottom: 24,
-    ...CARD_SHADOW,
+    marginBottom: 10,
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 22,
+    paddingVertical: 8,
     alignItems: 'center',
   },
-  tabTextStatic: {
-    fontSize: 14,
+  tabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  tabText: {
+    fontSize: 16,
     fontFamily: Fonts.sans,
     color: '#07004D',
   },
-
-  // Bar chart
+  tabTextActive: {
+    fontFamily: Fonts.rounded,
+  },
   chartWrap: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: 28,
+    height: 170,
     paddingHorizontal: 4,
-    height: 172,
   },
   chartGroup: {
     alignItems: 'center',
     width: '31%',
   },
+  metricValue: {
+    fontSize: 10,
+    fontFamily: Fonts.sans,
+    color: '#6C6C6C',
+    marginBottom: 5,
+  },
   barGroup: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
-  },
-  metricCol: {
-    alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: 9,
-    fontFamily: Fonts.sans,
-    color: '#6C6C6C',
-    marginBottom: 4,
+    justifyContent: 'center',
   },
   bar: {
-    width: 22,
-    borderRadius: 4,
+    width: 30,
+    borderRadius: 5,
   },
   chartLabel: {
-    fontSize: 13,
-    fontFamily: Fonts.sans,
-    color: '#888',
-    marginTop: 8,
+    fontSize: 14,
+    fontFamily: Fonts.rounded,
+    color: '#07004D',
+    marginTop: 10,
   },
 
   // Report card
@@ -424,7 +445,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 24,
-    marginBottom: 16,
+    marginBottom: 10,
     alignItems: 'center',
     ...CARD_SHADOW,
   },
@@ -498,7 +519,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     flexDirection: 'row',
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 12,
     ...CARD_SHADOW,
   },
@@ -518,10 +539,10 @@ const styles = StyleSheet.create({
     color: '#888',
   },
   insightCard: {
-    marginTop: 12,
+    marginTop: 8,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -564,26 +585,26 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   habitCard: {
-    marginTop: 14,
-    marginBottom: 14,
+    marginTop: 8,
+    marginBottom: 8,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     paddingHorizontal: 18,
-    paddingVertical: 18,
+    paddingVertical: 12,
     alignItems: 'center',
     ...CARD_SHADOW,
   },
   habitTitle: {
     fontFamily: Fonts.rounded,
-    fontSize: 34,
-    lineHeight: 38,
+    fontSize: 24,
+    lineHeight: 28,
     color: '#07004D',
     marginBottom: 8,
   },
   habitMessage: {
     fontFamily: Fonts.sans,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 17,
     color: '#07004D',
     textAlign: 'center',
   },

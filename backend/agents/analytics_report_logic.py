@@ -81,6 +81,9 @@ def _generate_insights(
     utilization_now: float,
     goals: List[str],
     rank: str,
+    transaction_change_pct: float,
+    new_spending_merchants: List[str],
+    unwise_spending_flags: List[str],
 ) -> List[Dict[str, str]]:
     insights: List[Dict[str, str]] = []
 
@@ -137,6 +140,40 @@ def _generate_insights(
             }
         )
 
+    if abs(transaction_change_pct) >= 20:
+        direction = "up" if transaction_change_pct > 0 else "down"
+        insights.append(
+            {
+                "type": "warning" if transaction_change_pct > 0 else "positive",
+                "text": f"Transaction volume is {direction} {abs(transaction_change_pct):.2f}% vs last month.",
+            }
+        )
+
+    if "spending_spike" in unwise_spending_flags:
+        insights.append(
+            {
+                "type": "warning",
+                "text": "We detected a spending spike this month compared with your previous month pattern.",
+            }
+        )
+
+    if "merchant_concentration" in unwise_spending_flags:
+        insights.append(
+            {
+                "type": "warning",
+                "text": "A large share of your spend is concentrated in one merchant category. Consider diversifying or reducing large repeat charges.",
+            }
+        )
+
+    if new_spending_merchants:
+        sample = ", ".join(new_spending_merchants[:2])
+        insights.append(
+            {
+                "type": "warning",
+                "text": f"New merchant activity detected: {sample}. Review if these are planned purchases.",
+            }
+        )
+
     return insights[:4]
 
 
@@ -161,12 +198,14 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
     merchant_spending: Dict[str, float] = defaultdict(float)
     for tx in txs:
         month_key = str(tx["day"])[:7]
-        amount = abs(float(tx["amount"]))
+        raw_amount = float(tx["amount"])
+        amount = abs(raw_amount)
         normalized_month = _normalize_month_key(month_key)
-        if normalized_month:
+        # Spending analytics should only use spend transactions, not payments/refunds.
+        if normalized_month and raw_amount > 0:
             monthly_spending[normalized_month] += amount
-        merchant_name = str(tx.get("company") or "Unknown")
-        merchant_spending[merchant_name] += amount
+            merchant_name = str(tx.get("company") or "Unknown")
+            merchant_spending[merchant_name] += amount
     monthly_spending = {k: round(v, 2) for k, v in monthly_spending.items()}
     top_merchants = sorted(
         merchant_spending.items(),
@@ -188,6 +227,7 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
             "day": str(tx.get("day", "")),
             "company": str(tx.get("company") or "Unknown"),
             "amount": round(abs(float(tx.get("amount") or 0)), 2),
+            "type": "payment" if float(tx.get("amount") or 0) < 0 else "spending",
         }
         for tx in recent_transactions
     ]
@@ -201,12 +241,9 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
     score_series = [score_by_month.get(m, 0) for m in months]
     spending_series = [monthly_spending.get(m, 0.0) for m in months]
 
-    utilization_series: List[float] = []
-    for spend in spending_series:
-        if credit_limit > 0:
-            utilization_series.append(round((spend / credit_limit) * 100.0, 2))
-        else:
-            utilization_series.append(0.0)
+    current_utilization_value = round((balance / credit_limit) * 100.0, 2) if credit_limit > 0 else 0.0
+    # Utilization is defined as current balance / total credit amount.
+    utilization_series: List[float] = [current_utilization_value for _ in months]
 
     current_month = months[-1]
     previous_month = months[-2]
@@ -224,6 +261,28 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
     spending_change_pct = _safe_pct_change(current_spending, previous_spending)
     utilization_change_pct = _safe_pct_change(current_utilization, previous_utilization)
 
+    current_month_txs = [tx for tx in txs if str(tx.get("day", "")).startswith(current_month)]
+    previous_month_txs = [tx for tx in txs if str(tx.get("day", "")).startswith(previous_month)]
+    current_month_spending_txs = [tx for tx in current_month_txs if float(tx.get("amount") or 0) > 0]
+    previous_month_spending_txs = [tx for tx in previous_month_txs if float(tx.get("amount") or 0) > 0]
+    transaction_change_pct = _safe_pct_change(len(current_month_spending_txs), len(previous_month_spending_txs))
+
+    current_merchants = {str(tx.get("company") or "Unknown") for tx in current_month_spending_txs}
+    previous_merchants = {str(tx.get("company") or "Unknown") for tx in previous_month_spending_txs}
+    new_spending_merchants = sorted(current_merchants - previous_merchants)
+
+    unwise_spending_flags: List[str] = []
+    if previous_spending > 0 and current_spending > previous_spending * 1.3:
+        unwise_spending_flags.append("spending_spike")
+    if current_utilization > 50:
+        unwise_spending_flags.append("high_utilization")
+    if top_merchants and current_spending > 0:
+        top_share = float(top_merchants[0]["amount"]) / current_spending
+        if top_share >= 0.6:
+            unwise_spending_flags.append("merchant_concentration")
+    if len(new_spending_merchants) >= 3:
+        unwise_spending_flags.append("many_new_merchants")
+
     insights = _generate_insights(
         score_change_pct=score_change_pct,
         spending_change_pct=spending_change_pct,
@@ -231,6 +290,9 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
         utilization_now=current_utilization if current_utilization > 0 else (balance / credit_limit * 100.0 if credit_limit else 0),
         goals=goals,
         rank=rank,
+        transaction_change_pct=transaction_change_pct,
+        new_spending_merchants=new_spending_merchants,
+        unwise_spending_flags=unwise_spending_flags,
     )
     habit_title, habit_message = _habit_builder(goals, rank, current_utilization)
 
@@ -249,6 +311,9 @@ def build_analytics_report(user_data: Dict[str, Any]) -> Dict[str, Any]:
         "score_change_pct": score_change_pct,
         "spending_change_pct": spending_change_pct,
         "utilization_change_pct": utilization_change_pct,
+        "transaction_change_pct": transaction_change_pct,
+        "new_spending_merchants": new_spending_merchants,
+        "unwise_spending_flags": unwise_spending_flags,
         "transaction_count": len(txs),
         "top_merchants": top_merchants,
         "recent_transactions_summary": recent_transactions_summary,

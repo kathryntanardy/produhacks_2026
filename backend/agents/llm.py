@@ -3,6 +3,26 @@ from agents.config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
 import json
 
 
+def _normalize_text_field(value: object, fallback: str) -> str:
+    if isinstance(value, list):
+        parts = [str(v).strip() for v in value if str(v).strip()]
+        return " ".join(parts) if parts else fallback
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    if not text:
+        return fallback
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                parts = [str(v).strip() for v in parsed if str(v).strip()]
+                return " ".join(parts) if parts else fallback
+        except Exception:
+            text = text[1:-1].strip()
+    return text
+
+
 def generate_credit_feedback(analytics: dict) -> str:
     prompt = f"""
 You are a careful credit education assistant.
@@ -104,9 +124,12 @@ User context:
 - Score change %: {analytics_report.get("score_change_pct")}
 - Spending change %: {analytics_report.get("spending_change_pct")}
 - Utilization change %: {analytics_report.get("utilization_change_pct")}
+- Transaction count change %: {analytics_report.get("transaction_change_pct")}
 - Transaction count: {analytics_report.get("transaction_count")}
 - Top merchants: {analytics_report.get("top_merchants")}
 - Recent transactions: {analytics_report.get("recent_transactions_summary")}
+- New merchants this month: {analytics_report.get("new_spending_merchants")}
+- Unwise spending flags: {analytics_report.get("unwise_spending_flags")}
 
 Requirements:
 - Output strict JSON only.
@@ -116,6 +139,8 @@ Requirements:
 - Message must reference rank level tone (beta = beginner, alpha = progressing, sigma = advanced).
 - Message must consider user goals when available.
 - Message must consider spending/transaction behavior, not just rank.
+- Do not output list syntax like [] in any value.
+- If transaction text includes "CREDIT CARD PAYMENT", treat it as the user's payment behavior (not merchant spending).
 - No markdown, no extra keys.
 """
 
@@ -150,8 +175,8 @@ Requirements:
             raise
         parsed = json.loads(content[start : end + 1])
 
-    title = str(parsed.get("habit_builder_title", "Habit Builder")).strip() or "Habit Builder"
-    message = str(parsed.get("habit_builder_message", "")).strip()
+    title = _normalize_text_field(parsed.get("habit_builder_title"), "Habit Builder")
+    message = _normalize_text_field(parsed.get("habit_builder_message"), "")
     if not message:
         raise ValueError("Missing habit_builder_message from LLM response")
 

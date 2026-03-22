@@ -180,7 +180,42 @@ def me():
         "xp": user.xp,
     })
 
-# TODO: Add toast for payment and spending
+def _calculate_utilization(balance: float, credit_limit: float) -> float:
+    if credit_limit <= 0:
+        return 0.0
+    return round((balance / credit_limit) * 100, 2)
+
+
+def _build_transaction_feedback(action: str, amount: float, utilization_pct: float, balance: float) -> str:
+    if action == "spending":
+        if utilization_pct < 30:
+            return (
+                f"You spent ${amount:.2f}. Your utilization is now {utilization_pct:.2f}%"
+                " - well within the healthy range."
+            )
+        if utilization_pct <= 50:
+            return (
+                f"You spent ${amount:.2f}. Your utilization hit {utilization_pct:.2f}%."
+                " Try to pay down your balance before your next statement."
+            )
+        return (
+            f"You spent ${amount:.2f}. At {utilization_pct:.2f}% utilization,"
+            " your credit score is at risk. Consider a payment soon."
+        )
+
+    if balance <= 0:
+        return "Your balance is fully paid off. Excellent credit behavior."
+    if utilization_pct < 30:
+        return (
+            f"Payment applied. Your utilization dropped to {utilization_pct:.2f}%"
+            " - back in the healthy zone."
+        )
+    return (
+        f"Payment applied. Utilization is now {utilization_pct:.2f}%."
+        " Another payment could help."
+    )
+
+
 @app.route("/api/transactions", methods=["POST"])
 @firebase_auth_required
 def create_transaction():
@@ -192,9 +227,10 @@ def create_transaction():
     amount = data.get("amount")
     day = data.get("day")
     company = data.get("company")
+    action = str(data.get("action") or "").strip().lower()
 
-    if amount is None or not day or not company:
-        return jsonify({"error": "amount, day, and company are required"}), 400
+    if amount is None or not day:
+        return jsonify({"error": "amount and day are required"}), 400
 
     try:
         parsed_day = datetime.strptime(day, "%Y-%m-%d").date()
@@ -202,13 +238,46 @@ def create_transaction():
     except ValueError:
         return jsonify({"error": "Invalid amount or day format"}), 400
 
+    if amount == 0:
+        return jsonify({"error": "amount must be non-zero"}), 400
+
+    if action and action not in {"spending", "payment"}:
+        return jsonify({"error": "action must be either 'spending' or 'payment'"}), 400
+
+    if not action:
+        action = "payment" if amount < 0 else "spending"
+
+    absolute_amount = abs(amount)
+    current_balance = float(user.balance or 0)
+    credit_limit = float(user.credit_limit or 0)
+
+    if action == "spending":
+        signed_amount = absolute_amount
+        company = company or "Card Spend"
+        user.balance = current_balance + absolute_amount
+        applied_amount = absolute_amount
+    else:
+        company = company or "Payment"
+        applied_amount = min(absolute_amount, current_balance) if current_balance > 0 else absolute_amount
+        signed_amount = -applied_amount
+        user.balance = max(0.0, current_balance - applied_amount)
+
     transaction = Transaction(
         user_id=user.id,
-        amount=amount,
+        amount=signed_amount,
         day=parsed_day,
         company=company,
     )
     db.session.add(transaction)
+
+    current_utilization = _calculate_utilization(float(user.balance or 0), credit_limit)
+    feedback_message = _build_transaction_feedback(
+        action=action,
+        amount=applied_amount,
+        utilization_pct=current_utilization,
+        balance=float(user.balance or 0),
+    )
+
     db.session.commit()
 
     return jsonify({
@@ -217,6 +286,10 @@ def create_transaction():
         "amount": float(transaction.amount),
         "day": transaction.day.isoformat(),
         "company": transaction.company,
+        "action": action,
+        "balance": float(user.balance or 0),
+        "utilization_pct": current_utilization,
+        "feedback_message": feedback_message,
     }), 201
 
 

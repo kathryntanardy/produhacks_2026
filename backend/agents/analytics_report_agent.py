@@ -36,6 +36,9 @@ class AnalyticsReportResponse(Model):
     score_change_pct: float
     spending_change_pct: float
     utilization_change_pct: float
+    transaction_change_pct: float
+    new_spending_merchants: List[str]
+    unwise_spending_flags: List[str]
     transaction_count: int
     top_merchants: List[Dict[str, Any]]
     recent_transactions_summary: List[Dict[str, Any]]
