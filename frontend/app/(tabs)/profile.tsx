@@ -8,12 +8,16 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/constants/firebase';
 import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import BetaBadge from '@/assets/images/home/Beta_Badge.svg';
+import AlphaBadge from '@/assets/images/test/alpha.svg';
+import BetaBadge from '@/assets/images/test/beta.svg';
+import SigmaBadge from '@/assets/images/test/sigma.svg';
 import LogoutIcon from '@/assets/images/profile/logout_icon.svg';
+import { useUserRank } from '@/hooks/useUserRank';
 
 const circleBg = require('@/assets/images/home/Circle_Background_Home.png');
 
@@ -58,9 +62,24 @@ const MONTHLY_QUESTS: Quest[] = [
   { xp: 65, description: 'Stay below 30% utilization all month' },
 ];
 
+function toDisplayRank(rank: 'alpha' | 'beta' | 'sigma') {
+  if (rank === 'alpha') return 'Alpha';
+  if (rank === 'sigma') return 'Sigma';
+  return 'Beta';
+}
+
 export default function ProfileScreen() {
   const { backendUser } = useAuth();
+  const { rank: userRank, refreshRank } = useUserRank();
   const insets = useSafeAreaInsets();
+  const resolvedRank = userRank ?? backendUser?.rank ?? 'beta';
+  const BadgeIcon = resolvedRank === 'alpha' ? AlphaBadge : resolvedRank === 'sigma' ? SigmaBadge : BetaBadge;
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshRank();
+    }, [refreshRank]),
+  );
+
 
   const xp = backendUser?.xp ?? 0;
   const rank = getRankInfo(xp);
@@ -88,9 +107,9 @@ export default function ProfileScreen() {
         {/* Badge + rank */}
         <View style={styles.badgeSection}>
           <View style={styles.badgeCircle}>
-            <BetaBadge width={90} height={90} />
+            <BadgeIcon width={90} height={90} />
           </View>
-          <Text style={styles.rankName}>{rank.name}</Text>
+          <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
 
           {/* XP progress bar */}
           <View style={styles.progressTrack}>

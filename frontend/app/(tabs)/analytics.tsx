@@ -1,106 +1,167 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '@/constants/firebase';
 import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import CircleBgExpenses from '@/assets/images/expenses/Circle_Background_Expenses.svg';
 
-const TABS = ['Score', 'Spending', 'Utili.'] as const;
-type Tab = (typeof TABS)[number];
+const TABS = ['Score', 'Spending'] as const;
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
 
 const LEGEND = [
   { label: '300 - 659', color: '#F44336' },
   { label: '660 - 724', color: '#FF9800' },
-  { label: '725 - 759', color: '#888' },
+  { label: '725 - 759', color: '#C8E6C9' },
   { label: '760+', color: '#4CAF50' },
 ];
 
-function dotColor(score: number): string {
+type AnalyticsInsight = {
+  type: 'positive' | 'warning';
+  text: string;
+};
+
+type AnalyticsReport = {
+  latest_score: number;
+  latest_date: string;
+  current_month_label: string;
+  previous_month_label: string;
+  monthly: { key: string; label: string }[];
+  score_series: number[];
+  spending_series: number[];
+  utilization_series: number[];
+  score_change_pct: number;
+  spending_change_pct: number;
+  utilization_change_pct: number;
+  previous_score: number;
+  current_score: number;
+  insights: AnalyticsInsight[];
+  habit_builder_title: string;
+  habit_builder_message: string;
+};
+
+const FALLBACK_INSIGHTS: AnalyticsInsight[] = [
+  { type: 'positive', text: 'You checked your credit score 5 times this month.' },
+  { type: 'warning', text: 'Your credit utilization was 33% this month.' },
+  { type: 'warning', text: 'You missed 1 payment, decreased your score.' },
+];
+
+function scoreColor(score: number): string {
   if (score >= 760) return '#4CAF50';
-  if (score >= 725) return '#888';
+  if (score >= 725) return '#8BC34A';
   if (score >= 660) return '#FF9800';
   return '#F44336';
 }
 
-// Hardcoded monthly spending & utilization for demo (real data would come from backend)
-const MONTHLY_STATS: Record<string, { spending: number; utilization: number }> = {
-  Jan: { spending: 420, utilization: 28 },
-  Feb: { spending: 510, utilization: 34 },
-  Mar: { spending: 380, utilization: 25 },
-};
+function formatPct(value: number, invert = false) {
+  const positive = invert ? value <= 0 : value >= 0;
+  return {
+    text: `${positive ? '↑' : '↓'} ${Math.abs(value).toFixed(2)}%`,
+    positive,
+  };
+}
 
 export default function AnalyticsScreen() {
   const { backendUser } = useAuth();
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<Tab>('Score');
+  const [report, setReport] = useState<AnalyticsReport | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Credit score history sorted by key
-  const scoreEntries = Object.entries(backendUser?.credit_score ?? {})
-    .sort(([a], [b]) => a.localeCompare(b));
+  useEffect(() => {
+    const fetchReport = async () => {
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) return;
+        const res = await fetch(`${API_BASE}/api/analytics-report`, {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+        if (!res.ok) return;
+        const payload = await res.json();
+        setReport(payload);
+      } catch {
+        // keep fallback UI
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, []);
 
-  const latestScore = scoreEntries.length > 0
-    ? scoreEntries[scoreEntries.length - 1][1]
-    : null;
+  const fallbackScoreEntries = Object.entries(backendUser?.credit_score ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const fallbackLatest = fallbackScoreEntries.length ? fallbackScoreEntries[fallbackScoreEntries.length - 1][1] : 0;
+  const fallbackPrev = fallbackScoreEntries.length > 1 ? fallbackScoreEntries[fallbackScoreEntries.length - 2][1] : fallbackLatest;
+  const fallbackMonths = ['Jan', 'Feb', 'Mar'];
 
-  const prevScore = scoreEntries.length > 1
-    ? scoreEntries[scoreEntries.length - 2][1]
-    : null;
+  const monthItems = report?.monthly?.length
+    ? report.monthly
+    : fallbackMonths.map((label, i) => ({ key: `fallback-${label}-${i}`, label }));
 
-  const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const scoreSeries = report?.score_series?.length
+    ? report.score_series
+    : [fallbackPrev * 0.9, fallbackPrev, fallbackLatest];
+  const spendingSeries = report?.spending_series?.length ? report.spending_series : [450, 520, 410];
+  const utilizationSeries = report?.utilization_series?.length ? report.utilization_series : [28, 34, 25];
 
-  const currentMonth = today.toLocaleDateString('en-US', { month: 'long' });
-  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1)
-    .toLocaleDateString('en-US', { month: 'long' });
+  const chartData = useMemo(() => {
+    const maxScore = Math.max(...scoreSeries, 1);
+    const maxSpending = Math.max(...spendingSeries, 1);
+    const BAR_MAX_H = 120;
 
-  // Build bar chart data based on active tab
-  const months = ['Jan', 'Feb', 'Mar'];
+    return monthItems.map((monthItem, i) => {
+      const score = Number(scoreSeries[i] ?? 0);
+      const spending = Number(spendingSeries[i] ?? 0);
 
-  function getBarData(): { month: string; bars: number[] }[] {
-    if (activeTab === 'Score') {
-      return months.map((m) => {
-        const entry = scoreEntries.find(([k]) => k.toLowerCase().startsWith(m.toLowerCase()));
-        const val = entry ? entry[1] : 0;
-        // Two bars per month for visual interest
-        return { month: m, bars: [val * 0.85, val * 0.4] };
-      });
-    }
-    if (activeTab === 'Spending') {
-      return months.map((m) => {
-        const s = MONTHLY_STATS[m]?.spending ?? 0;
-        return { month: m, bars: [s, s * 0.6] };
-      });
-    }
-    // Utilization
-    return months.map((m) => {
-      const u = MONTHLY_STATS[m]?.utilization ?? 0;
-      return { month: m, bars: [u * 3, u * 1.5] };
+      return {
+        key: monthItem.key || `${monthItem.label}-${i}`,
+        month: monthItem.label,
+        metrics: [
+          {
+            id: 'score',
+            height: Math.max(6, Math.round((score / maxScore) * BAR_MAX_H)),
+            color: '#5F4BF5',
+            valueText: `${Math.round(score)}`,
+          },
+          {
+            id: 'spending',
+            height: Math.max(6, Math.round((spending / maxSpending) * BAR_MAX_H)),
+            color: '#7C6BF8',
+            valueText: `$${Math.round(spending)}`,
+          },
+        ],
+      };
     });
-  }
+  }, [monthItems, scoreSeries, spendingSeries]);
+  const latestScore = report?.latest_score ?? fallbackLatest;
+  const dateStr = report?.latest_date ?? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const currentMonth = report?.current_month_label ?? 'Mar';
+  const prevMonth = report?.previous_month_label ?? 'Feb';
+  const prevScore = report?.previous_score ?? fallbackPrev;
 
-  const barData = getBarData();
-  const maxBar = Math.max(...barData.flatMap((d) => d.bars), 1);
-  const BAR_MAX_H = 120;
-
-  // Month-over-month changes
-  const scoreChange = latestScore && prevScore
-    ? (((latestScore - prevScore) / prevScore) * 100).toFixed(2)
-    : null;
-  const spendChange = MONTHLY_STATS.Mar && MONTHLY_STATS.Feb
-    ? (((MONTHLY_STATS.Mar.spending - MONTHLY_STATS.Feb.spending) / MONTHLY_STATS.Feb.spending) * 100).toFixed(0)
-    : null;
-  const utilChange = MONTHLY_STATS.Mar && MONTHLY_STATS.Feb
-    ? (((MONTHLY_STATS.Mar.utilization - MONTHLY_STATS.Feb.utilization) / MONTHLY_STATS.Feb.utilization) * 100).toFixed(0)
-    : null;
+  const scoreStat = formatPct(report?.score_change_pct ?? 0);
+  const spendStat = formatPct(report?.spending_change_pct ?? 0, true);
+  const utilStat = formatPct(report?.utilization_change_pct ?? 0, true);
+  const insightItems = report?.insights?.length ? report.insights : FALLBACK_INSIGHTS;
+  const habitTitle = report?.habit_builder_title ?? 'Habit Builder';
+  const habitMessage =
+    report?.habit_builder_message ??
+    'Make sure to pay before your due date by checking your expenses and transferring money into the credit account.';
 
   return (
     <View style={styles.container}>
+      {loading ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#5F4BF5" />
+        </View>
+      ) : null}
+
       <View style={styles.circleBg}>
         <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
       </View>
@@ -108,7 +169,7 @@ export default function AnalyticsScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.headerTitle}>Analytics</Text>
-        <Text style={styles.heroScore}>{latestScore ?? '—'}</Text>
+        <Text style={styles.heroScore}>{latestScore || '—'}</Text>
         <Text style={styles.heroDate}>{dateStr}</Text>
       </View>
 
@@ -120,34 +181,31 @@ export default function AnalyticsScreen() {
         {/* Tab selector */}
         <View style={styles.tabBar}>
           {TABS.map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-            </TouchableOpacity>
+            <View key={tab} style={styles.tab}>
+              <Text style={styles.tabTextStatic}>{tab}</Text>
+            </View>
           ))}
         </View>
 
-        {/* Bar chart */}
+        {/* Bar chart: left=score, middle=spending, right=utilization */}
         <View style={styles.chartWrap}>
-          {barData.map((group) => (
-            <View key={group.month} style={styles.chartGroup}>
+          {chartData.map((group) => (
+            <View key={group.key} style={styles.chartGroup}>
               <View style={styles.barGroup}>
-                {group.bars.map((val, i) => {
-                  const h = Math.max(6, Math.round((val / maxBar) * BAR_MAX_H));
+                {group.metrics.map((metric) => {
                   return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.bar,
-                        {
-                          height: h,
-                          backgroundColor: i === 0 ? '#5F4BF5' : '#D4C5F0',
-                        },
-                      ]}
-                    />
+                    <View key={metric.id} style={styles.metricCol}>
+                      <Text style={styles.metricValue}>{metric.valueText}</Text>
+                      <View
+                        style={[
+                          styles.bar,
+                          {
+                            height: metric.height,
+                            backgroundColor: metric.color,
+                          },
+                        ]}
+                      />
+                    </View>
                   );
                 })}
               </View>
@@ -161,8 +219,8 @@ export default function AnalyticsScreen() {
           <Text style={styles.reportTitle}>{currentMonth} Report</Text>
 
           <View style={styles.reportRow}>
-            <View style={[styles.scoreBox, { borderColor: dotColor(prevScore ?? 0) }]}>
-              <Text style={[styles.scoreBoxNum, { color: dotColor(prevScore ?? 0) }]}>
+            <View style={[styles.scoreBox, { borderColor: scoreColor(prevScore ?? 0) }]}>
+              <Text style={[styles.scoreBoxNum, { color: scoreColor(prevScore ?? 0) }]}>
                 {prevScore ?? '—'}
               </Text>
               <Text style={styles.scoreBoxLabel}>{prevMonth}</Text>
@@ -171,8 +229,8 @@ export default function AnalyticsScreen() {
 
             <Text style={styles.arrow}>→</Text>
 
-            <View style={[styles.scoreBox, { borderColor: dotColor(latestScore ?? 0) }]}>
-              <Text style={[styles.scoreBoxNum, { color: dotColor(latestScore ?? 0) }]}>
+            <View style={[styles.scoreBox, { borderColor: scoreColor(latestScore ?? 0) }]}>
+              <Text style={[styles.scoreBoxNum, { color: scoreColor(latestScore ?? 0) }]}>
                 {latestScore ?? '—'}
               </Text>
               <Text style={styles.scoreBoxLabel}>{currentMonth.slice(0, 3)}</Text>
@@ -195,19 +253,38 @@ export default function AnalyticsScreen() {
         <View style={styles.statsCard}>
           <StatItem
             label="Credit Score"
-            value={scoreChange ? `${Number(scoreChange) >= 0 ? '↑' : '↓'} ${Math.abs(Number(scoreChange))}%` : '—'}
-            positive={Number(scoreChange) >= 0}
+            value={scoreStat.text}
+            positive={scoreStat.positive}
           />
           <StatItem
             label="Spending"
-            value={spendChange ? `${Number(spendChange) > 0 ? '↑' : '↓'} ${Math.abs(Number(spendChange))}%` : '—'}
-            positive={Number(spendChange) <= 0}
+            value={spendStat.text}
+            positive={spendStat.positive}
           />
           <StatItem
             label="Utilization"
-            value={utilChange ? `${Number(utilChange) > 0 ? '↑' : '↓'} ${Math.abs(Number(utilChange))}%` : '—'}
-            positive={Number(utilChange) <= 0}
+            value={utilStat.text}
+            positive={utilStat.positive}
           />
+        </View>
+
+        {insightItems.map((item, idx) => (
+          <View
+            key={`${item.text}-${idx}`}
+            style={[styles.insightCard, item.type === 'positive' ? styles.insightPositive : styles.insightWarning]}
+          >
+            <View style={[styles.insightIcon, item.type === 'positive' ? styles.iconPositive : styles.iconWarning]}>
+              <Text style={[styles.insightIconText, item.type === 'positive' ? styles.iconTextPositive : styles.iconTextWarning]}>
+                {item.type === 'positive' ? 'O' : 'X'}
+              </Text>
+            </View>
+            <Text style={styles.insightText}>{item.text}</Text>
+          </View>
+        ))}
+
+        <View style={styles.habitCard}>
+          <Text style={styles.habitTitle}>{habitTitle}</Text>
+          <Text style={styles.habitMessage}>{habitMessage}</Text>
         </View>
       </ScrollView>
     </View>
@@ -250,6 +327,13 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     alignItems: 'center',
   },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
   headerTitle: {
     fontSize: 16,
     fontFamily: Fonts.rounded,
@@ -291,38 +375,41 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
   },
-  tabActive: {
-    backgroundColor: '#F4F0FA',
-  },
-  tabText: {
+  tabTextStatic: {
     fontSize: 14,
     fontFamily: Fonts.sans,
-    color: '#888',
-  },
-  tabTextActive: {
     color: '#07004D',
-    fontWeight: '600',
   },
 
   // Bar chart
   chartWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     alignItems: 'flex-end',
     marginBottom: 28,
-    paddingHorizontal: 16,
-    height: 160,
+    paddingHorizontal: 4,
+    height: 172,
   },
   chartGroup: {
     alignItems: 'center',
+    width: '31%',
   },
   barGroup: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 10,
+  },
+  metricCol: {
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 9,
+    fontFamily: Fonts.sans,
+    color: '#6C6C6C',
+    marginBottom: 4,
   },
   bar: {
-    width: 18,
+    width: 22,
     borderRadius: 4,
   },
   chartLabel: {
@@ -429,5 +516,75 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: Fonts.sans,
     color: '#888',
+  },
+  insightCard: {
+    marginTop: 12,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    ...CARD_SHADOW,
+  },
+  insightPositive: {
+    backgroundColor: '#E8FFD8',
+  },
+  insightWarning: {
+    backgroundColor: '#FFDDE0',
+  },
+  insightIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconPositive: {
+    backgroundColor: '#C6F7AA',
+  },
+  iconWarning: {
+    backgroundColor: '#FFCDD4',
+  },
+  insightIconText: {
+    fontFamily: Fonts.rounded,
+    fontSize: 14,
+  },
+  iconTextPositive: {
+    color: '#2E7D32',
+  },
+  iconTextWarning: {
+    color: '#C62828',
+  },
+  insightText: {
+    flex: 1,
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    color: '#07004D',
+    lineHeight: 20,
+  },
+  habitCard: {
+    marginTop: 14,
+    marginBottom: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    alignItems: 'center',
+    ...CARD_SHADOW,
+  },
+  habitTitle: {
+    fontFamily: Fonts.rounded,
+    fontSize: 34,
+    lineHeight: 38,
+    color: '#07004D',
+    marginBottom: 8,
+  },
+  habitMessage: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#07004D',
+    textAlign: 'center',
   },
 });

@@ -5,10 +5,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import BetaBadge from '../assets/images/home/Beta_Badge.svg';
+import { useFocusEffect } from '@react-navigation/native';
 import CurvedBar from '../assets/images/home/Curved_Bar.svg';
+import AlphaBadge from '@/assets/images/test/alpha.svg';
+import BetaBadge from '@/assets/images/test/beta.svg';
+import SigmaBadge from '@/assets/images/test/sigma.svg';
 import { Fonts } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { useUserRank } from '@/hooks/useUserRank';
 
 const circleBg = require('../assets/images/home/Circle_Background_Home.png');
 
@@ -76,6 +80,15 @@ const gaugeStyles = StyleSheet.create({
 
 export default function LinkedHomeScreen() {
   const { backendUser } = useAuth();
+  const { rank, refreshRank } = useUserRank();
+  const resolvedRank = rank ?? backendUser?.rank ?? 'beta';
+  const BadgeIcon = resolvedRank === 'alpha' ? AlphaBadge : resolvedRank === 'sigma' ? SigmaBadge : BetaBadge;
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshRank();
+    }, [refreshRank]),
+  );
 
   const latestScore = (() => {
     const entries = Object.entries(backendUser?.credit_score ?? {});
@@ -165,7 +178,7 @@ export default function LinkedHomeScreen() {
 
           {/* Right: Alpha Badge */}
           <View style={[styles.bottomBox, styles.badgeBox]}>
-            <BetaBadge width={116} height={116} />
+            <BadgeIcon width={116} height={116} />
           </View>
         </View>
       </View>

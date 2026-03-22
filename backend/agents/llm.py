@@ -1,5 +1,6 @@
 import requests
-from agents.config import OLLAMA_URL, OLLAMA_MODEL
+from agents.config import OLLAMA_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
+import json
 
 
 def generate_credit_feedback(analytics: dict) -> str:
@@ -44,7 +45,7 @@ Rules:
             ],
             "stream": False,
         },
-        timeout=60,
+        timeout=OLLAMA_TIMEOUT_SECONDS,
     )
 
     response.raise_for_status()
@@ -85,8 +86,76 @@ Rules:
             ],
             "stream": False,
         },
-        timeout=60,
+        timeout=OLLAMA_TIMEOUT_SECONDS,
     )
 
     response.raise_for_status()
     return response.json()["message"]["content"].strip()
+
+
+def generate_habit_builder_copy(analytics_report: dict) -> dict:
+    prompt = f"""
+You are writing short in-app coaching copy for a credit analytics screen.
+
+User context:
+- Rank: {analytics_report.get("rank")}
+- Goals: {analytics_report.get("goals")}
+- Latest score: {analytics_report.get("latest_score")}
+- Score change %: {analytics_report.get("score_change_pct")}
+- Spending change %: {analytics_report.get("spending_change_pct")}
+- Utilization change %: {analytics_report.get("utilization_change_pct")}
+- Transaction count: {analytics_report.get("transaction_count")}
+- Top merchants: {analytics_report.get("top_merchants")}
+- Recent transactions: {analytics_report.get("recent_transactions_summary")}
+
+Requirements:
+- Output strict JSON only.
+- JSON keys: habit_builder_title, habit_builder_message
+- Title must be "Habit Builder".
+- Message must be 1-2 short sentences, easy to understand.
+- Message must reference rank level tone (beta = beginner, alpha = progressing, sigma = advanced).
+- Message must consider user goals when available.
+- Message must consider spending/transaction behavior, not just rank.
+- No markdown, no extra keys.
+"""
+
+    response = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": OLLAMA_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You produce strict JSON for mobile app copy."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "stream": False,
+        },
+        timeout=OLLAMA_TIMEOUT_SECONDS,
+    )
+
+    response.raise_for_status()
+    content = response.json()["message"]["content"].strip()
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        parsed = json.loads(content[start : end + 1])
+
+    title = str(parsed.get("habit_builder_title", "Habit Builder")).strip() or "Habit Builder"
+    message = str(parsed.get("habit_builder_message", "")).strip()
+    if not message:
+        raise ValueError("Missing habit_builder_message from LLM response")
+
+    return {
+        "habit_builder_title": title,
+        "habit_builder_message": message,
+    }

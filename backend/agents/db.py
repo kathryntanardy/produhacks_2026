@@ -18,7 +18,7 @@ def get_user_and_transactions(user_id: int):
 
     cur.execute(
         """
-        SELECT id, name, email, credit_score
+        SELECT id, name, email, credit_score, rank, goals, credit_limit, balance, annual_income, xp
         FROM users
         WHERE id = %s
         """,
@@ -45,13 +45,19 @@ def get_user_and_transactions(user_id: int):
     cur.close()
     conn.close()
 
-    uid, name, email, credit_score = user_row
+    uid, name, email, credit_score, rank, goals, credit_limit, balance, annual_income, xp = user_row
 
     return {
         "id": uid,
         "name": name,
         "email": email,
         "credit_score": credit_score or {},   # JSONB dict
+        "rank": rank or "beta",
+        "goals": goals or [],
+        "credit_limit": float(credit_limit or 0),
+        "balance": float(balance or 0),
+        "annual_income": annual_income,
+        "xp": int(xp or 0),
         "transactions": [
             {
                 "id": row[0],

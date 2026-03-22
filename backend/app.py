@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from dotenv import load_dotenv
@@ -49,6 +49,7 @@ initialize_firebase()
 ANALYTICS_AGENT_URL = os.getenv("ANALYTICS_AGENT_URL", "http://127.0.0.1:8001/analyze")
 EXPLANATION_AGENT_URL = os.getenv("EXPLANATION_AGENT_URL", "http://127.0.0.1:8002/explain")
 CHATBOX_AGENT_URL = os.getenv("CHATBOX_AGENT_URL", "http://127.0.0.1:8003/chat")
+ANALYTICS_REPORT_AGENT_URL = os.getenv("ANALYTICS_REPORT_AGENT_URL", "http://127.0.0.1:8004/report")
 
 ALLOWED_INCOME_RANGES = {
     "$0 to $19,999",
@@ -367,6 +368,24 @@ def credit_feedback():
         return jsonify({"error": f"Explanation agent unavailable: {str(e)}"}), 500
 
 
+@app.route("/api/analytics-report", methods=["GET"])
+@firebase_auth_required
+def analytics_report():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    try:
+        response = requests.post(
+            ANALYTICS_REPORT_AGENT_URL,
+            json={"user_id": user.id},
+            timeout=60,
+        )
+        return jsonify(response.json()), response.status_code
+    except requests.RequestException as e:
+        return jsonify({"error": f"Analytics report agent unavailable: {str(e)}"}), 500
+
+
 @app.route("/api/chat", methods=["POST"])
 @firebase_auth_required
 def chat():
@@ -476,6 +495,18 @@ def update_rank():
 
     return jsonify({
         "message": "Rank updated",
+        "rank": user.rank,
+    }), 200
+
+
+@app.route("/api/rank", methods=["GET"])
+@firebase_auth_required
+def get_rank():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    return jsonify({
         "rank": user.rank,
     }), 200
 
@@ -647,8 +678,16 @@ def set_access_token():
                     user.credit_limit = balances.get('limit') or 0
                     user.balance = balances.get('current') or 0
                     if not user.credit_score:
-                        month_key = datetime.now().strftime("%B_%Y")
-                        user.credit_score = {month_key: 672}
+                        current_month_start = datetime.now().replace(day=1)
+                        previous_month_start = (current_month_start - timedelta(days=1)).replace(day=1)
+                        two_months_back_start = (previous_month_start - timedelta(days=1)).replace(day=1)
+
+                        # Seed an initial 3-month history so analytics can render previous -> current.
+                        user.credit_score = {
+                            two_months_back_start.strftime("%Y-%m"): 640,
+                            previous_month_start.strftime("%Y-%m"): 655,
+                            current_month_start.strftime("%Y-%m"): 672,
+                        }
                     db.session.commit()
         except Exception as e:
             print(f"Warning: could not fetch balances after linking: {e}")

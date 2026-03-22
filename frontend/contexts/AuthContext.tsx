@@ -9,7 +9,7 @@ type BackendUser = {
   firebase_uid: string;
   name: string;
   email: string;
-  rank: number;
+  rank: 'alpha' | 'beta' | 'sigma';
   credit_score: Record<string, number>;
   credit_limit: number;
   balance: number;
