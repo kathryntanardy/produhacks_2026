@@ -52,10 +52,9 @@ class User(db.Model):
     email = db.Column(db.String(150), unique=True)
     rank = db.Column(db.Integer, default=0)
 
-    # IMPORTANT: credit_score is JSONB
-    # example:
-    # {"2025-12": 650, "2026-01": 670, "2026-02": 690}
     credit_score = db.Column(JSONB, nullable=False, server_default="{}")
+    credit_limit = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    balance = db.Column(db.Numeric(12, 2), nullable=False, default=0)
 
     transactions = db.relationship(
         "Transaction",
@@ -131,6 +130,8 @@ def auth_firebase():
             "email": user.email,
             "rank": user.rank,
             "credit_score": user.credit_score or {},
+            "credit_limit": float(user.credit_limit),
+            "balance": float(user.balance),
         }
     }), 200
 
@@ -149,9 +150,11 @@ def me():
         "email": user.email,
         "rank": user.rank,
         "credit_score": user.credit_score or {},
+        "credit_limit": float(user.credit_limit),
+        "balance": float(user.balance),
     })
 
-
+# TODO: Add toast for payment and spending
 @app.route("/api/transactions", methods=["POST"])
 @firebase_auth_required
 def create_transaction():
