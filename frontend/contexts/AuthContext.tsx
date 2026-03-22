@@ -10,6 +10,12 @@ type BackendUser = {
   name: string;
   email: string;
   rank: number;
+  credit_score: Record<string, number>;
+  credit_limit: number;
+  balance: number;
+  xp: number;
+  goals: string[];
+  annual_income: string | null;
 };
 
 type AuthContextType = {

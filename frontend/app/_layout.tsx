@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { Fonts } from '@/constants/theme';
@@ -72,11 +73,13 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthProvider>
-        <AuthGuardStack />
-      </AuthProvider>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <AuthProvider>
+          <AuthGuardStack />
+        </AuthProvider>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
