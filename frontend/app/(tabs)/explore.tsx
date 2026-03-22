@@ -1,112 +1,362 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { WebView, type WebViewNavigation } from 'react-native-webview';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { auth } from '@/constants/firebase';
 
-export default function TabTwoScreen() {
+type PlaidAccount = {
+  account_id: string;
+  name: string;
+  official_name: string | null;
+  type: string;
+  subtype: string | null;
+  mask: string | null;
+  balances: {
+    available: number | null;
+    current: number | null;
+    iso_currency_code: string | null;
+  };
+};
+
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
+const PLAID_LINK_BASE = 'https://cdn.plaid.com/link/v2/stable/link.html';
+
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+  const idToken = await user.getIdToken();
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${idToken}`,
+  };
+}
+
+export default function LinkBankScreen() {
+  const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchingAccounts, setFetchingAccounts] = useState(true);
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [showWebView, setShowWebView] = useState(false);
+  const webViewRef = useRef<WebView>(null);
+
+  const fetchAccounts = useCallback(async () => {
+    try {
+      setFetchingAccounts(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/api/accounts`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data.accounts ?? []);
+      } else {
+        setAccounts([]);
+      }
+    } catch {
+      setAccounts([]);
+    } finally {
+      setFetchingAccounts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  const handleLinkBank = useCallback(async () => {
+    try {
+      setLoading(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/api/create_link_token`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+
+      if (data.link_token) {
+        setLinkToken(data.link_token);
+        setShowWebView(true);
+      } else {
+        Alert.alert('Error', data?.error?.display_message ?? 'Could not create link token');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to create link token');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const closeWebView = useCallback(() => {
+    setShowWebView(false);
+    setLinkToken(null);
+  }, []);
+
+  // Handle plaidlink:// URL scheme redirects (iOS)
+  const handleNavigationChange = useCallback(
+    async (event: WebViewNavigation) => {
+      const url = event.url;
+      if (!url.startsWith('plaidlink://')) return;
+
+      const params = new URLSearchParams(url.split('?')[1]);
+      const eventName = url.split('//')[1]?.split('?')[0];
+
+      if (eventName === 'connected') {
+        const publicToken = params.get('public_token');
+        closeWebView();
+
+        if (publicToken) {
+          try {
+            const headers = await getAuthHeaders();
+            await fetch(`${API_BASE}/api/set_access_token`, {
+              method: 'POST',
+              headers: {
+                ...headers,
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+              },
+              body: `public_token=${publicToken}`,
+            });
+            Alert.alert('Success', 'Bank account linked!');
+            fetchAccounts();
+          } catch {
+            Alert.alert('Error', 'Failed to exchange token');
+          }
+        }
+      } else if (eventName === 'exit') {
+        closeWebView();
+        const errorMessage = params.get('error_message');
+        if (errorMessage) {
+          Alert.alert('Link Error', errorMessage);
+        }
+      }
+    },
+    [fetchAccounts, closeWebView],
+  );
+
+  const plaidLinkUri = linkToken
+    ? `${PLAID_LINK_BASE}?isWebView=true&token=${linkToken}`
+    : '';
+
+  const renderAccount = ({ item }: { item: PlaidAccount }) => (
+    <View style={styles.accountCard}>
+      <View style={styles.accountHeader}>
+        <Text style={styles.accountName}>{item.name}</Text>
+        {item.mask && <Text style={styles.accountMask}>••••{item.mask}</Text>}
+      </View>
+      {item.official_name && (
+        <Text style={styles.officialName}>{item.official_name}</Text>
+      )}
+      <View style={styles.accountDetails}>
+        <Text style={styles.accountType}>
+          {item.type}{item.subtype ? ` · ${item.subtype}` : ''}
+        </Text>
+        {item.balances.current != null && (
+          <Text style={styles.balance}>
+            ${item.balances.current.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+
+  if (fetchingAccounts) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <ActivityIndicator size="large" />
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Bank Accounts</Text>
+        <Text style={styles.subtitle}>
+          {accounts.length > 0
+            ? `${accounts.length} account${accounts.length > 1 ? 's' : ''} linked`
+            : 'Link your bank account to get started'}
+        </Text>
+      </View>
+
+      {accounts.length > 0 ? (
+        <FlatList
+          data={accounts}
+          keyExtractor={(item) => item.account_id}
+          renderItem={renderAccount}
+          contentContainerStyle={styles.listContent}
+          style={styles.list}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>🏦</Text>
+          <Text style={styles.emptyText}>No bank accounts linked yet</Text>
+        </View>
+      )}
+
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleLinkBank}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {accounts.length > 0 ? 'Link Another Account' : 'Link Bank Account'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet">
+        {linkToken && (
+          <WebView
+            ref={webViewRef}
+            source={{ uri: plaidLinkUri }}
+            onShouldStartLoadWithRequest={(event) => {
+              if (event.url.startsWith('plaidlink://')) {
+                handleNavigationChange(event as WebViewNavigation);
+                return false;
+              }
+              return true;
+            }}
+            onNavigationStateChange={handleNavigationChange}
+            originWhitelist={['https://*', 'plaidlink://*']}
+            javaScriptEnabled
+            domStorageEnabled
+            startInLoadingState
+            renderLoading={() => (
+              <View style={styles.webViewLoading}>
+                <ActivityIndicator size="large" />
+              </View>
+            )}
+          />
+        )}
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: '#f7f7f7',
   },
-  titleContainer: {
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f7f7f7',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 4,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  accountCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  accountHeader: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  accountName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111',
+    flex: 1,
+  },
+  accountMask: {
+    fontSize: 14,
+    color: '#999',
+    marginLeft: 8,
+  },
+  officialName: {
+    fontSize: 13,
+    color: '#888',
+    marginTop: 2,
+  },
+  accountDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  accountType: {
+    fontSize: 13,
+    color: '#666',
+    textTransform: 'capitalize',
+  },
+  balance: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+  },
+  footer: {
+    padding: 20,
+    paddingBottom: 32,
+  },
+  button: {
+    backgroundColor: '#111',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  webViewLoading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
