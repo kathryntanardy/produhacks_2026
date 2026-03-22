@@ -27,6 +27,7 @@ from plaid.model.credit_account_subtype import CreditAccountSubtype
 
 from auth_middleware import firebase_auth_required
 from firebase_admin_init import initialize_firebase
+from helpers.webhook_transaction_helper import WebhookTransactionsHelper
 from sqlalchemy.dialects.postgresql import ARRAY
 
 
@@ -75,6 +76,7 @@ class User(db.Model):
     goals = db.Column(ARRAY(db.String), nullable=False, default=list)
     annual_income = db.Column(db.String(50))
     xp = db.Column(db.Integer, nullable=False, default=0)
+    completed_quests = db.Column(JSONB, nullable=False, server_default="[]")
 
     transactions = db.relationship(
         "Transaction",
@@ -155,6 +157,7 @@ def auth_firebase():
             "goals": user.goals or [],
             "annual_income": user.annual_income,
             "xp": user.xp,
+            "completed_quests": user.completed_quests or [],
         }
     }), 200
 
@@ -178,6 +181,7 @@ def me():
         "goals": user.goals or [],
         "annual_income": user.annual_income,
         "xp": user.xp,
+        "completed_quests": user.completed_quests or [],
     })
 
 # TODO: Add toast for payment and spending
@@ -522,6 +526,7 @@ PLAID_SECRET = os.getenv('PLAID_SECRET')
 PLAID_ENV = os.getenv('PLAID_ENV', 'sandbox')
 PLAID_PRODUCTS = os.getenv('PLAID_PRODUCTS', 'transactions').split(',')
 PLAID_COUNTRY_CODES = os.getenv('PLAID_COUNTRY_CODES', 'US').split(',')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 def empty_to_none(field):
     value = os.getenv(field)
@@ -558,6 +563,8 @@ for product in PLAID_PRODUCTS:
 # In-memory store — keyed by firebase_uid so each user gets their own token
 access_tokens = {}
 item_ids = {}
+user_account_ids = {}  # uid -> {account_id: account_name}
+user_cursors = {}      # uid -> next_cursor for transactions_sync
 
 
 def format_error(e):
@@ -627,6 +634,7 @@ def create_link_token():
             user=LinkTokenCreateRequestUser(
                 client_user_id=str(user.id)
             ),
+            webhook=WEBHOOK_URL,
             account_filters=LinkTokenAccountFilters(
                 credit=CreditFilter(
                     account_subtypes=CreditAccountSubtypes([
@@ -660,11 +668,20 @@ def set_access_token():
         access_token = exchange_response['access_token']
         access_tokens[uid] = access_token
         item_ids[uid] = exchange_response['item_id']
+        print(f"Access Token: {access_token}")
+        print(f"Item ID: {exchange_response['item_id']}")
 
         try:
             balance_req = AccountsBalanceGetRequest(access_token=access_token)
             balance_resp = client.accounts_balance_get(balance_req)
             accounts = balance_resp['accounts']
+
+            # Store account IDs for webhook sync
+            acct_map = {}
+            for a in accounts:
+                acct_map[a['account_id']] = a['name']
+            user_account_ids[uid] = acct_map
+            print(f"Account IDs: {acct_map}")
 
             credit_account = next(
                 (a for a in accounts if a['type'] == 'credit'),
@@ -701,38 +718,53 @@ def set_access_token():
                 has_more = True
                 retries = 0
 
-                while has_more and retries < 10:
+                print(f"Starting transaction sync for user {user.id}...")
+
+                while has_more and retries < 15:
                     sync_req = TransactionsSyncRequest(
                         access_token=access_token,
                         cursor=cursor,
                     )
                     sync_resp = client.transactions_sync(sync_req)
-                    cursor = sync_resp['next_cursor']
+                    new_cursor = sync_resp['next_cursor']
+                    page_added = sync_resp['added']
 
-                    if cursor == '' or (not sync_resp['added'] and retries < 5):
+                    print(f"  Sync attempt {retries}: cursor={new_cursor[:20]}... added={len(page_added)} has_more={sync_resp['has_more']}")
+
+                    if new_cursor == '' or (not page_added and not sync_resp['has_more']):
                         retries += 1
-                        time.sleep(1)
+                        print(f"  No data yet, retrying ({retries}/15)...")
+                        time.sleep(2)
                         continue
 
-                    added.extend(sync_resp['added'])
+                    cursor = new_cursor
+                    added.extend(page_added)
                     has_more = sync_resp['has_more']
 
+                print(f"Sync complete: {len(added)} total transactions fetched")
+
+                inserted = 0
                 for txn in added:
+                    company = txn.get('merchant_name') or txn.get('name') or 'Unknown'
                     existing = Transaction.query.filter_by(
                         user_id=user.id,
                         amount=abs(txn['amount']),
                         day=txn['date'],
-                        company=txn.get('merchant_name') or txn.get('name') or 'Unknown',
+                        company=company,
                     ).first()
                     if not existing:
                         db.session.add(Transaction(
                             user_id=user.id,
                             amount=abs(txn['amount']),
                             day=txn['date'],
-                            company=txn.get('merchant_name') or txn.get('name') or 'Unknown',
+                            company=company,
                         ))
+                        inserted += 1
                 db.session.commit()
-                print(f"Synced {len(added)} transactions for user {user.id}")
+                print(f"Inserted {inserted} new transactions (out of {len(added)} fetched) for user {user.id}")
+                # Save cursor so webhook syncs only pull NEW transactions
+                user_cursors[uid] = cursor
+                print(f"Cursor saved for user {user.id}")
         except Exception as e:
             print(f"Warning: could not sync transactions after linking: {e}")
 
@@ -756,6 +788,180 @@ def get_accounts():
         return jsonify(response.to_dict())
     except plaid.ApiException as e:
         return jsonify(format_error(e)), e.status
+
+
+# ==================== Debug / Simulation ====================
+
+@app.route('/api/debug/simulate_transaction', methods=['POST'])
+@firebase_auth_required
+def simulate_transaction():
+    """Insert a fake transaction for the current user.
+    Body JSON: { "amount": 42.50, "company": "Tim Hortons", "date": "2026-03-21" }
+    All fields optional — defaults to $9.99 at 'Simulated Merchant' today.
+    """
+    uid = g.user.get("uid")
+    user = User.query.filter_by(firebase_uid=uid).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    from datetime import date as d_date
+
+    body = request.get_json() or {}
+    amount = body.get('amount', 9.99)
+    company = body.get('company', 'Simulated Merchant')
+    day_str = body.get('date', d_date.today().isoformat())
+
+    try:
+        day = d_date.fromisoformat(day_str)
+    except ValueError:
+        day = d_date.today()
+
+    old_balance = float(user.balance or 0)
+
+    txn = Transaction(
+        user_id=user.id,
+        amount=amount,
+        day=day,
+        company=company,
+    )
+    db.session.add(txn)
+
+    # Positive = spending (increases balance), negative = payment (decreases balance)
+    user.balance = old_balance + amount
+
+    # Quest check: payment starting with "PAYMENT FROM" of at least 25% of old balance
+    quest_completed = None
+    quest_id = "weekly_payment_25pct"
+    completed = user.completed_quests or []
+    is_payment = company.upper().startswith("PAYMENT FROM")
+    if is_payment and amount < 0 and old_balance > 0:
+        payment = abs(amount)
+        threshold = old_balance * 0.25
+        if payment >= threshold and quest_id not in completed:
+            xp_reward = 10
+            user.xp += xp_reward
+            completed.append(quest_id)
+            user.completed_quests = completed
+            quest_completed = {"quest_id": quest_id, "xp_awarded": xp_reward}
+            print(f"QUEST COMPLETED: {quest_id} | +{xp_reward} XP for user {user.id}")
+
+    db.session.commit()
+
+    print(f"\nSIMULATED TRANSACTION for user {user.id}: ${amount:.2f} at {company} on {day} | New balance: ${float(user.balance):.2f}")
+
+    return jsonify({
+        "status": "ok",
+        "transaction": {
+            "id": txn.id,
+            "amount": float(txn.amount),
+            "company": txn.company,
+            "day": str(txn.day),
+        },
+        "quest_completed": quest_completed,
+    })
+
+
+# ==================== Plaid Webhook ====================
+
+@app.route('/api/receive_webhook', methods=['POST'])
+def receive_webhook():
+    try:
+        body = request.get_json()
+        webhook_type = body['webhook_type']
+        webhook_code = body['webhook_code']
+        item_id = body.get('item_id')
+
+        print(f"\n{'='*60}")
+        print(f"📩 WEBHOOK RECEIVED")
+        print(f"   Type: {webhook_type}")
+        print(f"   Code: {webhook_code}")
+        print(f"   Item: {item_id}")
+        print(f"   Body: {body}")
+        print(f"{'='*60}\n")
+
+        if webhook_type == 'TRANSACTIONS':
+            handle_transaction_webhook(webhook_code, body)
+        elif webhook_type == 'ITEM':
+            print(f"Webhook ITEM: {webhook_code}")
+        elif webhook_type == 'ASSETS':
+            print(f"Webhook ASSETS: {webhook_code}")
+
+        return jsonify({'status': 'received'})
+
+    except plaid.ApiException as e:
+        error_response = format_error(e)
+        return jsonify(error_response)
+    except Exception as e:
+        print(f"Webhook processing error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def handle_transaction_webhook(webhook_code, body):
+    item_id = body.get('item_id')
+
+    if webhook_code == 'SYNC_UPDATES_AVAILABLE':
+        print(f"Webhook - TRANSACTIONS - SYNC_UPDATES_AVAILABLE | Received")
+        sync_by_item_id(item_id)
+
+    elif webhook_code == 'INITIAL_UPDATE':
+        print(f"Webhook - TRANSACTIONS - INITIAL_UPDATE | Received, there's {body.get('new_transactions', 0)} new transactions available.")
+        sync_by_item_id(item_id)
+
+    elif webhook_code == 'HISTORICAL_UPDATE':
+        print(f"Webhook - TRANSACTIONS - HISTORICAL_UPDATE | Received, there's {body.get('new_transactions', 0)} new transactions available.")
+        sync_by_item_id(item_id)
+
+    elif webhook_code == 'DEFAULT_UPDATE':
+        print(f"Webhook - TRANSACTIONS - DEFAULT_UPDATE | Received, there's {body.get('new_transactions', 0)} new transactions available.")
+        sync_by_item_id(item_id)
+
+    elif webhook_code == 'TRANSACTIONS_REMOVED':
+        print(f"Webhook - TRANSACTIONS - TRANSACTIONS_REMOVED | Received")
+
+    else:
+        print(f"Can't handle webhook code {webhook_code}")
+
+
+def sync_by_item_id(item_id):
+    """Look up the user by their Plaid item_id (in-memory) and sync transactions
+    using the same WebhookTransactionsHelper pattern."""
+    if not item_id:
+        print("Warning: webhook missing item_id")
+        return
+
+    # Reverse lookup: find firebase_uid from item_ids dict
+    uid = None
+    for fuid, iid in item_ids.items():
+        if iid == item_id:
+            uid = fuid
+            break
+
+    if not uid:
+        print(f"Warning: no user found in memory for item_id {item_id}")
+        return
+
+    token = access_tokens.get(uid)
+    if not token:
+        print(f"Warning: no access_token in memory for uid {uid}")
+        return
+
+    user = User.query.filter_by(firebase_uid=uid).first()
+    if not user:
+        print(f"Warning: no DB user for uid {uid}")
+        return
+
+    account_ids = user_account_ids.get(uid, {})
+    cursor = user_cursors.get(uid, '')
+
+    try:
+        added, modified, removed, new_cursor = WebhookTransactionsHelper.handle_sync_updates_available(
+            token, client, cursor, account_ids,
+            db=db, user=user, Transaction=Transaction,
+        )
+        if new_cursor:
+            user_cursors[uid] = new_cursor
+    except Exception as e:
+        print(f"Error syncing transactions for user {user.id}: {e}")
 
 
 if __name__ == "__main__":

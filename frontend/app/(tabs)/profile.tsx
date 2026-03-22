@@ -50,16 +50,16 @@ function getRankInfo(xp: number) {
   return { name: current.name, remaining, pct };
 }
 
-type Quest = { xp: number; description: string };
+type Quest = { id: string; xp: number; description: string };
 
 const WEEKLY_QUESTS: Quest[] = [
-  { xp: 10, description: 'Make 1 payment' },
-  { xp: 15, description: 'Keep utilization under 30% for 7 days straight' },
+  { id: 'weekly_payment_25pct', xp: 10, description: 'Make 1 payment of at least 25% of current balance' },
+  { id: 'weekly_util_30pct', xp: 15, description: 'Keep utilization under 30% for 7 days straight' },
 ];
 
 const MONTHLY_QUESTS: Quest[] = [
-  { xp: 50, description: 'Keep your balance under $250 for 14 consecutive days' },
-  { xp: 65, description: 'Stay below 30% utilization all month' },
+  { id: 'monthly_balance_250', xp: 50, description: 'Keep your balance under $250 for 14 consecutive days' },
+  { id: 'monthly_util_30pct', xp: 65, description: 'Stay below 30% utilization all month' },
 ];
 
 function toDisplayRank(rank: 'alpha' | 'beta' | 'sigma') {
@@ -69,7 +69,7 @@ function toDisplayRank(rank: 'alpha' | 'beta' | 'sigma') {
 }
 
 export default function ProfileScreen() {
-  const { backendUser } = useAuth();
+  const { backendUser, syncBackendUser } = useAuth();
   const { rank: userRank, refreshRank } = useUserRank();
   const insets = useSafeAreaInsets();
   const resolvedRank = userRank ?? backendUser?.rank ?? 'beta';
@@ -77,8 +77,11 @@ export default function ProfileScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refreshRank();
-    }, [refreshRank]),
+      syncBackendUser();
+    }, [refreshRank, syncBackendUser]),
   );
+
+  const completedQuests = backendUser?.completed_quests ?? [];
 
 
   const xp = backendUser?.xp ?? 0;
@@ -121,28 +124,33 @@ export default function ProfileScreen() {
         </View>
 
         {/* Weekly Quests */}
-        <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} />
+        <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} />
 
         {/* Monthly Quests */}
-        <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} />
+        <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} />
       </View>
     </View>
   );
 }
 
-function QuestCard({ title, quests }: { title: string; quests: Quest[] }) {
+function QuestCard({ title, quests, completed }: { title: string; quests: Quest[]; completed: string[] }) {
   return (
     <View style={styles.questCard}>
       <Text style={styles.questTitle}>{title}</Text>
       <View style={styles.questRow}>
-        {quests.map((q, i) => (
-          <View key={i} style={styles.questItem}>
-            <View style={styles.xpBadge}>
-              <Text style={styles.xpBadgeText}>+ {q.xp} Exp</Text>
+        {quests.map((q, i) => {
+          const done = completed.includes(q.id);
+          return (
+            <View key={i} style={styles.questItem}>
+              <View style={[styles.xpBadge, done && styles.xpBadgeDone]}>
+                <Text style={[styles.xpBadgeText, done && styles.xpBadgeTextDone]}>
+                  {done ? 'Completed' : `+ ${q.xp} Exp`}
+                </Text>
+              </View>
+              <Text style={[styles.questDesc, done && styles.questDescDone]}>{q.description}</Text>
             </View>
-            <Text style={styles.questDesc}>{q.description}</Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -283,6 +291,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     maxWidth: 110,
+  },
+  questDescDone: {
+    color: '#4CAF50',
+  },
+  xpBadgeDone: {
+    backgroundColor: '#4CAF50',
+  },
+  xpBadgeTextDone: {
+    color: '#fff',
   },
 
 });

@@ -1,5 +1,5 @@
 // contexts/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../constants/firebase';
@@ -16,6 +16,7 @@ type BackendUser = {
   xp: number;
   goals: string[];
   annual_income: string | null;
+  completed_quests: string[];
 };
 
 type AuthContextType = {
@@ -54,7 +55,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
   };
 
-  const syncBackendUser = async () => {
+  const syncBackendUser = useCallback(async () => {
     if (!auth.currentUser) {
       setBackendUser(null);
       return;
@@ -80,7 +81,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const payload = await response.json();
     setBackendUser(payload.user ?? null);
-  };
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -97,6 +98,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } catch (error) {
         console.warn('Firestore profile sync warning:', error);
       }
+
+      try {
+        const token = await firebaseUser.getIdToken();
+        console.log('FIREBASE TOKEN:', token);
+      } catch {}
 
       try {
         await syncBackendUser();

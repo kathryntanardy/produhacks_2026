@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   ScrollView,
@@ -67,14 +68,14 @@ function groupByDate(txns: Transaction[]): { label: string; items: Transaction[]
 }
 
 export default function ExpensesScreen() {
-  const { backendUser } = useAuth();
+  const { backendUser, syncBackendUser } = useAuth();
   const insets = useSafeAreaInsets();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTransactions = useCallback(async () => {
+  const fetchTransactions = useCallback(async (showSpinner = false) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const idToken = await auth.currentUser?.getIdToken();
       const res = await fetch(`${API_BASE}/api/transactions`, {
         headers: {
@@ -93,7 +94,12 @@ export default function ExpensesScreen() {
     }
   }, []);
 
-  useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchTransactions(transactions.length === 0);
+      syncBackendUser();
+    }, [fetchTransactions, syncBackendUser])
+  );
 
   const groups = groupByDate(transactions);
 
@@ -163,7 +169,7 @@ export default function ExpensesScreen() {
                       <Text style={styles.txDate}>{formatDate(t.day)}</Text>
                     </View>
                     <Text style={[styles.txAmount, t.amount < 0 && styles.txCredit]}>
-                      {t.amount < 0 ? '+' : '-'}${Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {t.amount < 0 ? '-' : ''}${Math.abs(t.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </Text>
                   </View>
                 ))}
