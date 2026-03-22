@@ -79,7 +79,7 @@ const gaugeStyles = StyleSheet.create({
 });
 
 export default function LinkedHomeScreen() {
-  const { backendUser } = useAuth();
+  const { backendUser, syncBackendUser } = useAuth();
   const { rank, refreshRank } = useUserRank();
   const resolvedRank = rank ?? backendUser?.rank ?? 'beta';
   const BadgeIcon = resolvedRank === 'alpha' ? AlphaBadge : resolvedRank === 'sigma' ? SigmaBadge : BetaBadge;
@@ -87,7 +87,8 @@ export default function LinkedHomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refreshRank();
-    }, [refreshRank]),
+      syncBackendUser();
+    }, [refreshRank, syncBackendUser]),
   );
 
   const latestScore = (() => {
