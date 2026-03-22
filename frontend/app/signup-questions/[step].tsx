@@ -374,7 +374,7 @@ export default function SignupQuestionsStep() {
           <PrimaryButton content="←" width={56} onPress={handleBack} style={styles.backButton} />
           <PrimaryButton content="Continue" width="auto" onPress={handleContinue} style={styles.continueButton} />
         </View>
-      ) : (
+      ) : !isLastStep ? (
         <View style={styles.footer}>
           <PrimaryButton
             content={isFirstStep ? "Let's Get Started" : isLastStep ? 'Finish' : 'Continue'}
@@ -382,7 +382,7 @@ export default function SignupQuestionsStep() {
             onPress={handleContinue}
           />
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
