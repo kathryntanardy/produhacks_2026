@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth } from '../constants/firebase';
+import { Fonts } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function HomeScreen() {
@@ -54,16 +55,18 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 28,
-        fontWeight: '700',
+        fontFamily: Fonts.rounded,
         marginBottom: 8,
     },
     email: {
         fontSize: 16,
+        fontFamily: Fonts.sans,
         color: '#666',
         marginBottom: 8,
     },
     backendText: {
         fontSize: 14,
+        fontFamily: Fonts.sans,
         color: '#555',
         marginBottom: 4,
     },
@@ -75,6 +78,6 @@ const styles = StyleSheet.create({
     },
     buttonText: {
         color: 'white',
-        fontWeight: '600',
+        fontFamily: Fonts.rounded,
     },
 });
