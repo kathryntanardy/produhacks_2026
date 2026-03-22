@@ -1,7 +1,12 @@
-import React from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -54,7 +59,9 @@ type Quest = { id: string; xp: number; description: string };
 
 const WEEKLY_QUESTS: Quest[] = [
   { id: 'weekly_payment_25pct', xp: 10, description: 'Make 1 payment of at least 25% of current balance' },
-  { id: 'weekly_util_30pct', xp: 15, description: 'Keep utilization under 30% for 7 days straight' },
+  { id: 'weekly_util_down_5pct', xp: 20, description: 'Bring your utilization down by at least 5% this week' },
+  { id: 'weekly_payment_48h', xp: 15, description: 'Make a payment within 48 hours of a spending action' },
+  { id: 'weekly_util_under_30_7d', xp: 15, description: 'Keep utilization under 30% for 7 days straight' },
 ];
 
 const MONTHLY_QUESTS: Quest[] = [
@@ -74,12 +81,20 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const resolvedRank = userRank ?? backendUser?.rank ?? 'beta';
   const BadgeIcon = resolvedRank === 'alpha' ? AlphaBadge : resolvedRank === 'sigma' ? SigmaBadge : BetaBadge;
+  const [refreshing, setRefreshing] = useState(false);
+
   useFocusEffect(
     React.useCallback(() => {
       refreshRank();
       syncBackendUser();
     }, [refreshRank, syncBackendUser]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([syncBackendUser(), refreshRank()]);
+    setRefreshing(false);
+  }, [syncBackendUser, refreshRank]);
 
   const completedQuests = backendUser?.completed_quests ?? [];
 
@@ -99,59 +114,102 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
 
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
-          <LogoutIcon width={30} height={30} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.content}>
-        {/* Badge + rank */}
-        <View style={styles.badgeSection}>
-          <View style={styles.badgeCircle}>
-            <BadgeIcon width={90} height={90} />
-          </View>
-          <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
-
-          {/* XP progress bar */}
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.round(rank.pct * 100)}%` as any }]} />
-          </View>
-          <Text style={styles.xpRemaining}>
-            {rank.remaining > 0 ? `${rank.remaining} Exp Until Next Level` : 'Max Level Reached'}
-          </Text>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
+      >
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
+            <LogoutIcon width={30} height={30} color="#fff" />
+          </TouchableOpacity>
         </View>
 
-        {/* Weekly Quests */}
-        <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} />
+        <View style={styles.content}>
+          {/* Badge + rank */}
+          <View style={styles.badgeSection}>
+            <View style={styles.badgeCircle}>
+              <BadgeIcon width={90} height={90} />
+            </View>
+            <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
 
-        {/* Monthly Quests */}
-        <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} />
-      </View>
+            {/* XP progress bar */}
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.round(rank.pct * 100)}%` as any }]} />
+            </View>
+            <Text style={styles.xpRemaining}>
+              {rank.remaining > 0 ? `${rank.remaining} Exp Until Next Level` : 'Max Level Reached'}
+            </Text>
+          </View>
+
+          {/* Weekly Quests */}
+          <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} />
+
+          {/* Monthly Quests */}
+          <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} />
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 function QuestCard({ title, quests, completed }: { title: string; quests: Quest[]; completed: string[] }) {
+  const CARD_PADDING = 24;
+  const PAGE_GAP = 32;
+  const screenWidth = Dimensions.get('window').width;
+  const cardInnerWidth = screenWidth - 48 - CARD_PADDING * 2;
+  const pageSize = 2;
+  const pages: Quest[][] = [];
+  for (let i = 0; i < quests.length; i += pageSize) {
+    pages.push(quests.slice(i, i + pageSize));
+  }
+  const snapWidth = cardInnerWidth + PAGE_GAP;
+
+  const [activePageIdx, setActivePageIdx] = useState(0);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / snapWidth);
+    setActivePageIdx(idx);
+  }, [snapWidth]);
+
   return (
     <View style={styles.questCard}>
       <Text style={styles.questTitle}>{title}</Text>
-      <View style={styles.questRow}>
-        {quests.map((q, i) => {
-          const done = completed.includes(q.id);
-          return (
-            <View key={i} style={styles.questItem}>
-              <View style={[styles.xpBadge, done && styles.xpBadgeDone]}>
-                <Text style={[styles.xpBadgeText, done && styles.xpBadgeTextDone]}>
-                  {done ? 'Completed' : `+ ${q.xp} Exp`}
-                </Text>
-              </View>
-              <Text style={[styles.questDesc, done && styles.questDescDone]}>{q.description}</Text>
-            </View>
-          );
-        })}
-      </View>
+      <ScrollView
+        horizontal
+        pagingEnabled={false}
+        snapToInterval={snapWidth}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingHorizontal: 0, gap: PAGE_GAP }}
+      >
+        {pages.map((page, pi) => (
+          <View key={pi} style={{ width: cardInnerWidth, flexDirection: 'row', gap: 16 }}>
+            {page.map((q, qi) => {
+              const done = completed.includes(q.id);
+              return (
+                <View key={qi} style={styles.questItem}>
+                  <View style={[styles.xpBadge, done && styles.xpBadgeDone]}>
+                    <Text style={[styles.xpBadgeText, done && styles.xpBadgeTextDone]}>
+                      {done ? 'Completed' : `+ ${q.xp} Exp`}
+                    </Text>
+                  </View>
+                  <Text style={[styles.questDesc, done && styles.questDescDone]}>{q.description}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </ScrollView>
+      {pages.length > 1 && (
+        <View style={styles.dots}>
+          {pages.map((_, i) => (
+            <View key={i} style={[styles.dot, i === activePageIdx && styles.dotActive]} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -237,7 +295,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: 8,
-    backgroundColor: '#07004D',
+    backgroundColor: '#5F4BF5',
     borderRadius: 4,
   },
   xpRemaining: {
@@ -252,7 +310,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
     marginBottom: 16,
-    height: 175,
+    overflow: 'hidden',
     ...CARD_SHADOW,
   },
   questTitle: {
@@ -263,9 +321,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 18,
   },
-  questRow: {
+  dots: {
     flexDirection: 'row',
-    gap: 16,
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D4C5F0',
+  },
+  dotActive: {
+    backgroundColor: '#5F4BF5',
   },
   questItem: {
     flex: 1,

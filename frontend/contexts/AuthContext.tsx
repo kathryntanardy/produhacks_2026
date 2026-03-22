@@ -24,6 +24,8 @@ type AuthContextType = {
   loading: boolean;
   backendUser: BackendUser | null;
   syncBackendUser: () => Promise<void>;
+  utilWarningVisible: boolean;
+  dismissUtilWarning: () => void;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,12 +33,15 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   backendUser: null,
   syncBackendUser: async () => {},
+  utilWarningVisible: false,
+  dismissUtilWarning: () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [backendUser, setBackendUser] = useState<BackendUser | null>(null);
+  const [utilWarningDismissed, setUtilWarningDismissed] = useState(false);
 
   const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
 
@@ -116,8 +121,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return unsubscribe;
   }, []);
 
+  const utilization = (backendUser?.credit_limit ?? 0) > 0
+    ? ((backendUser?.balance ?? 0) / (backendUser?.credit_limit ?? 1)) * 100
+    : 0;
+  const utilWarningVisible = utilization >= 30 && !utilWarningDismissed;
+  const dismissUtilWarning = useCallback(() => setUtilWarningDismissed(true), []);
+
+  useEffect(() => {
+    if (utilization < 30) setUtilWarningDismissed(false);
+  }, [utilization]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, backendUser, syncBackendUser }}>
+    <AuthContext.Provider value={{ user, loading, backendUser, syncBackendUser, utilWarningVisible, dismissUtilWarning }}>
       {children}
     </AuthContext.Provider>
   );

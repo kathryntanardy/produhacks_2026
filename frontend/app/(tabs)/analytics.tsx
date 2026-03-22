@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -70,33 +71,39 @@ function formatPct(value: number, invert = false) {
 }
 
 export default function AnalyticsScreen() {
-  const { backendUser } = useAuth();
+  const { backendUser, syncBackendUser } = useAuth();
   const insets = useSafeAreaInsets();
   const [report, setReport] = useState<AnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ChartTab>('Score');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) return;
-        const res = await fetch(`${API_BASE}/api/analytics-report`, {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-        if (!res.ok) return;
-        const payload = await res.json();
-        setReport(payload);
-      } catch {
-        // keep fallback UI
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchReport();
+  const fetchReport = useCallback(async () => {
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      const res = await fetch(`${API_BASE}/api/analytics-report`, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      if (!res.ok) return;
+      const payload = await res.json();
+      setReport(payload);
+    } catch {
+      // keep fallback UI
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchReport(); }, [fetchReport]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchReport(), syncBackendUser()]);
+    setRefreshing(false);
+  }, [fetchReport, syncBackendUser]);
 
   const fallbackScoreEntries = Object.entries(backendUser?.credit_score ?? {}).sort(([a], [b]) => a.localeCompare(b));
   const fallbackLatest = fallbackScoreEntries.length ? fallbackScoreEntries[fallbackScoreEntries.length - 1][1] : 0;
@@ -163,18 +170,18 @@ export default function AnalyticsScreen() {
         <CircleBgExpenses width="100%" height="100%" preserveAspectRatio="xMidYMin slice" />
       </View>
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>Analytics</Text>
-        <Text style={styles.heroScore}>{latestScore || '—'}</Text>
-        <Text style={styles.heroDate}>{dateStr}</Text>
-      </View>
-
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 72 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
       >
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+          <Text style={styles.headerTitle}>Analytics</Text>
+          <Text style={styles.heroScore}>{latestScore || '—'}</Text>
+          <Text style={styles.heroDate}>{dateStr}</Text>
+        </View>
         <View style={styles.chartCard}>
           <View style={styles.tabBar}>
             {TABS.map((tab) => (
