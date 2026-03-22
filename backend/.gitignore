@@ -1,2 +1,13 @@
 serviceAccountKey.json
 .env
+
+# ---- backend ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.env
+.env.*
+serviceAccountKey.json
+*serviceAccount*.json
