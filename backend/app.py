@@ -16,6 +16,8 @@ from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
 from plaid.model.link_token_account_filters import LinkTokenAccountFilters
@@ -483,8 +485,77 @@ def set_access_token():
     try:
         exchange_request = ItemPublicTokenExchangeRequest(public_token=public_token)
         exchange_response = client.item_public_token_exchange(exchange_request)
-        access_tokens[uid] = exchange_response['access_token']
+        access_token = exchange_response['access_token']
+        access_tokens[uid] = access_token
         item_ids[uid] = exchange_response['item_id']
+
+        try:
+            balance_req = AccountsBalanceGetRequest(access_token=access_token)
+            balance_resp = client.accounts_balance_get(balance_req)
+            accounts = balance_resp['accounts']
+
+            credit_account = next(
+                (a for a in accounts if a['type'] == 'credit'),
+                accounts[0] if accounts else None,
+            )
+
+            if credit_account:
+                user = User.query.filter_by(firebase_uid=uid).first()
+                if user:
+                    balances = credit_account['balances']
+                    user.credit_limit = balances.get('limit') or 0
+                    user.balance = balances.get('current') or 0
+                    if not user.credit_score:
+                        month_key = datetime.now().strftime("%B_%Y")
+                        user.credit_score = {month_key: 672}
+                    db.session.commit()
+        except Exception as e:
+            print(f"Warning: could not fetch balances after linking: {e}")
+
+        # Sync credit card transactions from Plaid into the transactions table
+        try:
+            user = User.query.filter_by(firebase_uid=uid).first()
+            if user:
+                cursor = ''
+                added = []
+                has_more = True
+                retries = 0
+
+                while has_more and retries < 10:
+                    sync_req = TransactionsSyncRequest(
+                        access_token=access_token,
+                        cursor=cursor,
+                    )
+                    sync_resp = client.transactions_sync(sync_req)
+                    cursor = sync_resp['next_cursor']
+
+                    if cursor == '' or (not sync_resp['added'] and retries < 5):
+                        retries += 1
+                        time.sleep(1)
+                        continue
+
+                    added.extend(sync_resp['added'])
+                    has_more = sync_resp['has_more']
+
+                for txn in added:
+                    existing = Transaction.query.filter_by(
+                        user_id=user.id,
+                        amount=abs(txn['amount']),
+                        day=txn['date'],
+                        company=txn.get('merchant_name') or txn.get('name') or 'Unknown',
+                    ).first()
+                    if not existing:
+                        db.session.add(Transaction(
+                            user_id=user.id,
+                            amount=abs(txn['amount']),
+                            day=txn['date'],
+                            company=txn.get('merchant_name') or txn.get('name') or 'Unknown',
+                        ))
+                db.session.commit()
+                print(f"Synced {len(added)} transactions for user {user.id}")
+        except Exception as e:
+            print(f"Warning: could not sync transactions after linking: {e}")
+
         return jsonify(exchange_response.to_dict())
     except plaid.ApiException as e:
         return jsonify(format_error(e)), e.status
