@@ -66,7 +66,7 @@ class User(db.Model):
     firebase_uid = db.Column(db.String(200), unique=True, nullable=False)
     name = db.Column(db.String(100))
     email = db.Column(db.String(150), unique=True)
-    rank = db.Column(db.Integer, default=0)
+    rank = db.Column(db.String(50), nullable=False, default="beta")
 
     credit_score = db.Column(JSONB, nullable=False, server_default="{}")
     credit_limit = db.Column(db.Numeric(12, 2), nullable=False, default=0)
@@ -109,7 +109,7 @@ def get_or_create_db_user(profile_payload=None):
             firebase_uid=firebase_uid,
             name=name,
             email=email,
-            rank=0,
+            rank="beta",
             credit_score={},   # initialize JSONB
         )
         db.session.add(user)
@@ -456,8 +456,32 @@ def update_annual_income():
         "annual_income": user.annual_income,
     }), 200
 
+@app.route("/api/rank", methods=["POST"])
+@firebase_auth_required
+def update_rank():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    data = request.get_json(silent=True) or {}
+    rank = data.get("rank")
+
+    # ✅ validation (important)
+    allowed_ranks = {"beta", "alpha", "sigma"}
+    if rank not in allowed_ranks:
+        return jsonify({"error": "Invalid rank"}), 400
+
+    user.rank = rank
+    db.session.commit()
+
+    return jsonify({
+        "message": "Rank updated",
+        "rank": user.rank,
+    }), 200
+
 with app.app_context():
     db.create_all()
+    
 
 
 # ============================== Plaid API ==============================
