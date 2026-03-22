@@ -18,6 +18,10 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.products import Products
 from plaid.model.country_code import CountryCode
+from plaid.model.link_token_account_filters import LinkTokenAccountFilters
+from plaid.model.credit_filter import CreditFilter
+from plaid.model.credit_account_subtypes import CreditAccountSubtypes
+from plaid.model.credit_account_subtype import CreditAccountSubtype
 
 from auth_middleware import firebase_auth_required
 from firebase_admin_init import initialize_firebase
@@ -472,6 +476,45 @@ def format_error(e):
     }
 
 
+@app.route('/plaid-link')
+def plaid_link_page():
+    """Self-hosted Plaid Link page. Receives a link_token via query param,
+    opens Plaid Link with the JS SDK, and posts the result back via
+    window.ReactNativeWebView.postMessage so the React Native WebView
+    can receive it through onMessage."""
+    return '''<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<style>body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,sans-serif;background:#f7f7f7}
+.msg{color:#666;font-size:16px}</style>
+</head><body>
+<p class="msg" id="status"></p>
+<script>
+var token = new URLSearchParams(window.location.search).get('token');
+if (!token) {
+  document.getElementById('status').textContent = 'Error: no link token';
+} else {
+  var handler = Plaid.create({
+    token: token,
+    onSuccess: function(publicToken, metadata) {
+      var msg = JSON.stringify({event:'success', public_token: publicToken, metadata: metadata});
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+      document.getElementById('status').textContent = 'Connected! Returning...';
+    },
+    onExit: function(err, metadata) {
+      var msg = JSON.stringify({event:'exit', error: err, metadata: metadata});
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
+      document.getElementById('status').textContent = 'Closed.';
+    },
+    onEvent: function(eventName, metadata) {}
+  });
+  handler.open();
+}
+</script>
+</body></html>'''
+
+
 @app.route('/api/create_link_token', methods=['POST'])
 @firebase_auth_required
 def create_link_token():
@@ -487,6 +530,13 @@ def create_link_token():
             language='en',
             user=LinkTokenCreateRequestUser(
                 client_user_id=str(user.id)
+            ),
+            account_filters=LinkTokenAccountFilters(
+                credit=CreditFilter(
+                    account_subtypes=CreditAccountSubtypes([
+                        CreditAccountSubtype("credit card")
+                    ])
+                )
             )
         )
 

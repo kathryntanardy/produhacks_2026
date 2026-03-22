@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { WebView, type WebViewNavigation } from 'react-native-webview';
+import { WebView } from 'react-native-webview';
 
 import { auth } from '@/constants/firebase';
 
@@ -29,7 +29,6 @@ type PlaidAccount = {
 };
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
-const PLAID_LINK_BASE = 'https://cdn.plaid.com/link/v2/stable/link.html';
 
 async function getAuthHeaders() {
   const user = auth.currentUser;
@@ -94,25 +93,18 @@ export default function LinkBankScreen() {
     }
   }, []);
 
-  const closeWebView = useCallback(() => {
+  const dismissLink = useCallback(() => {
     setShowWebView(false);
     setLinkToken(null);
   }, []);
 
-  // Handle plaidlink:// URL scheme redirects (iOS)
-  const handleNavigationChange = useCallback(
-    async (event: WebViewNavigation) => {
-      const url = event.url;
-      if (!url.startsWith('plaidlink://')) return;
+  const handleWebViewMessage = useCallback(
+    async (event: { nativeEvent: { data: string } }) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
 
-      const params = new URLSearchParams(url.split('?')[1]);
-      const eventName = url.split('//')[1]?.split('?')[0];
-
-      if (eventName === 'connected') {
-        const publicToken = params.get('public_token');
-        closeWebView();
-
-        if (publicToken) {
+        if (data.event === 'success' && data.public_token) {
+          dismissLink();
           try {
             const headers = await getAuthHeaders();
             await fetch(`${API_BASE}/api/set_access_token`, {
@@ -121,28 +113,50 @@ export default function LinkBankScreen() {
                 ...headers,
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
               },
-              body: `public_token=${publicToken}`,
+              body: `public_token=${data.public_token}`,
             });
             Alert.alert('Success', 'Bank account linked!');
             fetchAccounts();
           } catch {
             Alert.alert('Error', 'Failed to exchange token');
           }
+        } else if (data.event === 'exit') {
+          dismissLink();
         }
-      } else if (eventName === 'exit') {
-        closeWebView();
-        const errorMessage = params.get('error_message');
-        if (errorMessage) {
-          Alert.alert('Link Error', errorMessage);
-        }
+      } catch {
+        // non-JSON — ignore
       }
     },
-    [fetchAccounts, closeWebView],
+    [dismissLink, fetchAccounts],
   );
 
   const plaidLinkUri = linkToken
-    ? `${PLAID_LINK_BASE}?isWebView=true&token=${linkToken}`
+    ? `${API_BASE}/plaid-link?token=${linkToken}`
     : '';
+
+  // Stub EME API to prevent FairPlay DRM crash in the iOS simulator.
+  // Plaid's JS SDK probes navigator.requestMediaKeySystemAccess for device
+  // attestation; on the simulator WebKit's GPU process aborts because
+  // FairPlay hardware isn't present. Returning a rejection is safe —
+  // Plaid Link still functions without EME.
+  const DISABLE_EME_JS = `
+    (function(){
+      if (navigator.requestMediaKeySystemAccess) {
+        navigator.requestMediaKeySystemAccess = function() {
+          return Promise.reject(new DOMException('Not supported','NotSupportedError'));
+        };
+      }
+      true;
+    })();
+  `;
+
+  const handleContentProcessTerminated = useCallback(() => {
+    dismissLink();
+    Alert.alert(
+      'WebView Crashed',
+      'The bank linking page encountered an issue. Please try again on a physical device.',
+    );
+  }, [dismissLink]);
 
   const renderAccount = ({ item }: { item: PlaidAccount }) => (
     <View style={styles.accountCard}>
@@ -216,30 +230,19 @@ export default function LinkBankScreen() {
         </TouchableOpacity>
       </View>
 
-      <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet">
-        {linkToken && (
+      <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet" onRequestClose={dismissLink}>
+        <SafeAreaView style={styles.modalContainer}>
           <WebView
+            style={styles.webView}
             ref={webViewRef}
             source={{ uri: plaidLinkUri }}
-            onShouldStartLoadWithRequest={(event) => {
-              if (event.url.startsWith('plaidlink://')) {
-                handleNavigationChange(event as WebViewNavigation);
-                return false;
-              }
-              return true;
-            }}
-            onNavigationStateChange={handleNavigationChange}
-            originWhitelist={['https://*', 'plaidlink://*']}
+            onMessage={handleWebViewMessage}
+            injectedJavaScriptBeforeContentLoaded={DISABLE_EME_JS}
+            onContentProcessDidTerminate={handleContentProcessTerminated}
             javaScriptEnabled
             domStorageEnabled
-            startInLoadingState
-            renderLoading={() => (
-              <View style={styles.webViewLoading}>
-                <ActivityIndicator size="large" />
-              </View>
-            )}
           />
-        )}
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -354,9 +357,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  webViewLoading: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  webView: {
+    flex: 1,
   },
 });
