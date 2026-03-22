@@ -1,8 +1,7 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Dimensions,
-  ScrollView,
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
@@ -117,8 +116,9 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
       >
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
@@ -128,37 +128,28 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
-        showsVerticalScrollIndicator={false}
-      >
-          {/* Badge + rank */}
-          <View style={styles.badgeSection}>
+        {/* Badge + rank */}
+        <View style={styles.badgeSection}>
           <View style={styles.badgeRing}>
-              <View style={styles.badgeCircle}>
-                <BadgeIcon width={114} height={110} />
+            <View style={styles.badgeCircle}>
+              <BadgeIcon width={114} height={110} />
             </View>
-            </View>
-            <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
-
-            {/* XP progress bar */}
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.round(rank.pct * 100)}%` as any }]} />
-            </View>
-            <Text style={styles.xpRemaining}>
-              {rank.remaining > 0 ? `${rank.remaining} Exp Until Next Level` : 'Max Level Reached'}
-            </Text>
           </View>
+          <Text style={styles.rankName}>{toDisplayRank(resolvedRank)}</Text>
+
+          {/* XP progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.round(rank.pct * 100)}%` as any }]} />
+          </View>
+          <Text style={styles.xpRemaining}>
+            {rank.remaining > 0 ? `${rank.remaining} Exp Until Next Level` : 'Max Level Reached'}
+          </Text>
+        </View>
 
         <View style={styles.questsSection}>
-            {/* Weekly Quests */}
-            <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} tone="weekly" />
-
-            {/* Monthly Quests */}
-            <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} tone="monthly" />
-          </View>
-      </ScrollView>
+          <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} completed={completedQuests} tone="weekly" />
+          <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} completed={completedQuests} tone="monthly" />
+        </View>
       </ScrollView>
     </View>
   );
@@ -175,7 +166,7 @@ function QuestCard({
   completed: string[];
   tone: 'weekly' | 'monthly';
 }) {
-  const CARD_PADDING = 24;
+  const CARD_PADDING = 20;
   const PAGE_GAP = 32;
   const screenWidth = Dimensions.get('window').width;
   const cardInnerWidth = screenWidth - 48 - CARD_PADDING * 2;
@@ -192,8 +183,7 @@ function QuestCard({
     setActivePageIdx(idx);
   }, [snapWidth]);
 
-  const isMonthly = tone === 'monthly';
-  const cardInner = (
+  const inner = (
     <>
       <Text style={styles.questTitle}>{title}</Text>
       <ScrollView
@@ -222,24 +212,6 @@ function QuestCard({
               );
             })}
           </View>
-    </>
-  );
-
-  if (isMonthly) {
-    return (
-      <LinearGradient
-        colors={['#FFFFFF', '#F2E7FF']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={[styles.questCard, styles.questCardMonthly]}>
-        {cardInner}
-      </LinearGradient>
-    );
-  }
-
-  return (
-    <View style={[styles.questCard, styles.questCardWeekly]}>
-      {cardInner}
         ))}
       </ScrollView>
       {pages.length > 1 && (
@@ -249,6 +221,25 @@ function QuestCard({
           ))}
         </View>
       )}
+    </>
+  );
+
+  if (tone === 'monthly') {
+    return (
+      <LinearGradient
+        colors={['#FFFFFF', '#F2E7FF']}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={[styles.questCard, styles.questCardMonthly]}
+      >
+        {inner}
+      </LinearGradient>
+    );
+  }
+
+  return (
+    <View style={[styles.questCard, styles.questCardWeekly]}>
+      {inner}
     </View>
   );
 }
@@ -383,7 +374,18 @@ const styles = StyleSheet.create({
   },
   dots: {
     flexDirection: 'row',
-    gap: 14,
+    justifyContent: 'center',
+    marginTop: 12,
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D4C5F0',
+  },
+  dotActive: {
+    backgroundColor: '#5F4BF5',
   },
   questItem: {
     flex: 1,
