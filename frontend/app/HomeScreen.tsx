@@ -1,23 +1,118 @@
-import React from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
+  Modal,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { WebView } from 'react-native-webview';
 import { Fonts } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../constants/firebase';
+
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://127.0.0.1:5001';
+
+const DISABLE_EME_JS = `
+  (function(){
+    if (navigator.requestMediaKeySystemAccess) {
+      navigator.requestMediaKeySystemAccess = function() {
+        return Promise.reject(new DOMException('Not supported','NotSupportedError'));
+      };
+    }
+    true;
+  })();
+`;
+
+import PlusIcon from '../assets/images/home/Plus_Icon.svg';
 
 const lockIcon = require('../assets/images/home/Lock_Icon.png');
 const circleBg = require('../assets/images/home/Circle_Background_Home.png');
 
 export default function HomeScreen() {
-  const { backendUser } = useAuth();
-  const router = useRouter();
+  const { backendUser, syncBackendUser } = useAuth();
   const hasCard = (backendUser?.credit_limit ?? 0) > 0;
+
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [showWebView, setShowWebView] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const webViewRef = useRef<WebView>(null);
+
+  const dismissLink = useCallback(() => {
+    setShowWebView(false);
+    setLinkToken(null);
+  }, []);
+
+  const handleLinkCard = useCallback(async () => {
+    try {
+      setLinking(true);
+      const idToken = await auth.currentUser?.getIdToken();
+      const res = await fetch(`${API_BASE}/api/create_link_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const data = await res.json();
+      if (data.link_token) {
+        setLinkToken(data.link_token);
+        setShowWebView(true);
+      } else {
+        Alert.alert('Error', data?.error?.display_message ?? 'Could not create link token');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to create link token');
+    } finally {
+      setLinking(false);
+    }
+  }, []);
+
+  const handleWebViewMessage = useCallback(
+    async (event: { nativeEvent: { data: string } }) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+        if (data.event === 'success' && data.public_token) {
+          dismissLink();
+          try {
+            const idToken = await auth.currentUser?.getIdToken();
+            await fetch(`${API_BASE}/api/set_access_token`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                Authorization: `Bearer ${idToken}`,
+              },
+              body: `public_token=${data.public_token}`,
+            });
+            Alert.alert('Success', 'Credit card linked!');
+            await syncBackendUser();
+          } catch {
+            Alert.alert('Error', 'Failed to exchange token');
+          }
+        } else if (data.event === 'exit') {
+          dismissLink();
+        }
+      } catch {
+        // non-JSON — ignore
+      }
+    },
+    [dismissLink, syncBackendUser],
+  );
+
+  const handleContentProcessTerminated = useCallback(() => {
+    dismissLink();
+    Alert.alert(
+      'WebView Crashed',
+      'The bank linking page encountered an issue. Please try again on a physical device.',
+    );
+  }, [dismissLink]);
+
+  const plaidUri = linkToken ? `${API_BASE}/plaid-link?token=${linkToken}` : '';
 
   return (
     <View style={styles.container}>
@@ -38,12 +133,19 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.addCardContainer}
             activeOpacity={0.7}
-            onPress={() => router.push('/(tabs)/explore')}
+            onPress={handleLinkCard}
+            disabled={linking}
           >
-            <Text style={styles.addCardTitle}>Add your credit card</Text>
-            <View style={styles.addCardIconWrap}>
-              <Text style={styles.addCardPlus}>+</Text>
-            </View>
+            {linking ? (
+              <ActivityIndicator color="#B8A0D8" />
+            ) : (
+              <>
+                <Text style={styles.addCardTitle}>Add your credit card</Text>
+                <View style={styles.addCardIconCenter}>
+                  <PlusIcon width={32} height={32} />
+                </View>
+              </>
+            )}
           </TouchableOpacity>
         ) : (
           <View style={styles.cardInfo}>
@@ -83,6 +185,21 @@ export default function HomeScreen() {
           <LockedCard locked={!hasCard} title="Goals" compact />
         </View>
       </ScrollView>
+
+      <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet" onRequestClose={dismissLink}>
+        <SafeAreaView style={styles.modalContainer}>
+          <WebView
+            ref={webViewRef}
+            style={styles.webView}
+            source={{ uri: plaidUri }}
+            onMessage={handleWebViewMessage}
+            injectedJavaScriptBeforeContentLoaded={DISABLE_EME_JS}
+            onContentProcessDidTerminate={handleContentProcessTerminated}
+            javaScriptEnabled
+            domStorageEnabled
+          />
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -163,10 +280,12 @@ const styles = StyleSheet.create({
   addCardContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    minHeight: 200,
+    minHeight: 215,
     paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     marginBottom: 14,
     shadowColor: '#7B2FBE',
     shadowOpacity: 0.08,
@@ -178,25 +297,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.sans,
     color: '#555',
-    marginBottom: 16,
+    marginBottom: 0,
   },
-  addCardIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#F4F0FA',
+  addCardIconCenter: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    alignSelf: 'stretch',
   },
-  addCardPlus: {
-    fontSize: 32,
-    lineHeight: 32,
-    color: '#B8A0D8',
-    fontWeight: '300',
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-
   cardInfo: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -281,5 +389,13 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontFamily: Fonts.rounded,
     color: '#4B0082',
+  },
+
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  webView: {
+    flex: 1,
   },
 });

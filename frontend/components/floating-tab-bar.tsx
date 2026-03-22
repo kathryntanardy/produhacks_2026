@@ -31,29 +31,31 @@ export function FloatingTabBar(props: BottomTabBarProps) {
         bottom: bottomOffset,
       }}
     >
+      {/* Outer view carries the shadow — must NOT have overflow:hidden or iOS clips the shadow */}
       <View
         style={{
-          backgroundColor: '#fff',
           borderRadius: 32,
-          overflow: 'hidden',
+          backgroundColor: '#fff',
           shadowColor: '#000',
-          shadowOpacity: 0.22,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 5 },
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 6 },
           elevation: 16,
         }}
       >
-        <BottomTabBar
-          {...props}
-          insets={barInsets}
-          style={{
-            backgroundColor: 'transparent',
-            borderTopWidth: 0,
-            elevation: 0,
-            // Fixed height — content centers vertically via flex in HapticTab
-            height: 68,
-          }}
-        />
+        {/* Inner view clips content to the pill shape */}
+        <View style={{ borderRadius: 32, overflow: 'hidden' }}>
+          <BottomTabBar
+            {...props}
+            insets={barInsets}
+            style={{
+              backgroundColor: 'transparent',
+              borderTopWidth: 0,
+              elevation: 0,
+              height: 68,
+            }}
+          />
+        </View>
       </View>
     </View>
   );
