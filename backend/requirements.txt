@@ -4,3 +4,4 @@ flask-sqlalchemy
 psycopg2-binary 
 firebase-admin
 python-dotenv
+plaid_python==38.1.0
