@@ -154,18 +154,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 28,
-    paddingTop: 14,
-    paddingBottom: 120,
+    // 33px matches x=33 margin from reference SVG
+    paddingHorizontal: 33,
+    paddingTop: 4,
+    paddingBottom: 160,
   },
 
   addCardContainer: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    paddingVertical: 40,
+    minHeight: 200,
     paddingHorizontal: 24,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    marginBottom: 14,
     shadowColor: '#7B2FBE',
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -188,15 +190,18 @@ const styles = StyleSheet.create({
   },
   addCardPlus: {
     fontSize: 32,
+    lineHeight: 32,
     color: '#B8A0D8',
     fontWeight: '300',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 
   cardInfo: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 26,
     shadowColor: '#7B2FBE',
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -238,16 +243,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8DDFA',
     borderRadius: 16,
     padding: 24,
-    marginBottom: 12,
-    minHeight: 200,
+    marginBottom: 14,
+    minHeight: 175,
     justifyContent: 'center',
     alignItems: 'center',
   },
   lockedCardCompact: {
     flex: 1,
+    // height 146px, gap 20px: 33+153+20+153+33 = 392 ≈ 393px reference width
     height: 146,
     minHeight: undefined,
-    marginHorizontal: 4,
+    marginHorizontal: 10,
   },
   lockedInner: {
     justifyContent: 'center',
@@ -268,7 +274,7 @@ const styles = StyleSheet.create({
   },
   lockedRow: {
     flexDirection: 'row',
-    marginHorizontal: -4,
+    marginHorizontal: -10,
   },
 
   scoreValue: {
