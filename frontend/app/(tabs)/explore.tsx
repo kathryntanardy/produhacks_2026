@@ -241,12 +241,6 @@ export default function LinkBankScreen() {
             onContentProcessDidTerminate={handleContentProcessTerminated}
             javaScriptEnabled
             domStorageEnabled
-            startInLoadingState
-            renderLoading={() => (
-              <View style={styles.webViewLoading}>
-                <ActivityIndicator size="large" />
-              </View>
-            )}
           />
         </SafeAreaView>
       </Modal>
@@ -369,10 +363,5 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
-  },
-  webViewLoading: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
