@@ -71,6 +71,7 @@ class User(db.Model):
     balance = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     goals = db.Column(ARRAY(db.String), nullable=False, default=list)
     annual_income = db.Column(db.String(50))
+    xp = db.Column(db.Integer, nullable=False, default=0)
 
     transactions = db.relationship(
         "Transaction",
@@ -150,6 +151,7 @@ def auth_firebase():
             "balance": float(user.balance),
             "goals": user.goals or [],
             "annual_income": user.annual_income,
+            "xp": user.xp,
         }
     }), 200
 
@@ -172,6 +174,7 @@ def me():
         "balance": float(user.balance),
         "goals": user.goals or [],
         "annual_income": user.annual_income,
+        "xp": user.xp,
     })
 
 # TODO: Add toast for payment and spending
@@ -285,6 +288,42 @@ def get_credit_score():
         "credit_score": user.credit_score or {},
     })
 
+@app.route("/api/xp/add", methods=["POST"])
+@firebase_auth_required
+def add_xp():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    data = request.get_json(silent=True) or {}
+    amount = data.get("amount", 0)
+
+    try:
+        amount = int(amount)
+        if amount < 0:
+            return jsonify({"error": "amount must be >= 0"}), 400
+    except ValueError:
+        return jsonify({"error": "amount must be integer"}), 400
+
+    user.xp += amount
+    db.session.commit()
+
+    return jsonify({
+        "message": "XP added",
+        "xp": user.xp,
+    }), 200
+
+@app.route("/api/xp", methods=["GET"])
+@firebase_auth_required
+def get_xp():
+    user = get_or_create_db_user()
+    if not user:
+        return jsonify({"error": "Invalid Firebase user"}), 401
+
+    return jsonify({
+        "user_id": user.id,
+        "xp": user.xp or 0,
+    }), 200
 
 # -----------------------------
 # AGENT-INTEGRATED ROUTES
