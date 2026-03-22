@@ -1,12 +1,69 @@
 import React from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/constants/firebase';
 import { Fonts } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import BetaBadge from '@/assets/images/home/Beta_Badge.svg';
+import LogoutIcon from '@/assets/images/profile/logout_icon.svg';
+
+const circleBg = require('@/assets/images/home/Circle_Background_Home.png');
+
+// Rank tiers — each tier needs `xpRequired` total XP to reach
+const RANKS = [
+  { name: 'Alpha', xp: 0 },
+  { name: 'Beta', xp: 200 },
+  { name: 'Gamma', xp: 500 },
+  { name: 'Delta', xp: 1000 },
+  { name: 'Omega', xp: 2000 },
+];
+
+function getRankInfo(xp: number) {
+  let current = RANKS[0];
+  let next = RANKS[1];
+  for (let i = 0; i < RANKS.length - 1; i++) {
+    if (xp >= RANKS[i].xp) {
+      current = RANKS[i];
+      next = RANKS[i + 1];
+    }
+  }
+  if (xp >= RANKS[RANKS.length - 1].xp) {
+    current = RANKS[RANKS.length - 1];
+    next = null as any;
+  }
+  const xpIntoLevel = xp - current.xp;
+  const xpForLevel = next ? next.xp - current.xp : 1;
+  const remaining = next ? next.xp - xp : 0;
+  const pct = next ? Math.min(1, xpIntoLevel / xpForLevel) : 1;
+  return { name: current.name, remaining, pct };
+}
+
+type Quest = { xp: number; description: string };
+
+const WEEKLY_QUESTS: Quest[] = [
+  { xp: 10, description: 'Make 1 payment' },
+  { xp: 15, description: 'Keep utilization under 30% for 7 days straight' },
+];
+
+const MONTHLY_QUESTS: Quest[] = [
+  { xp: 50, description: 'Keep your balance under $250 for 14 consecutive days' },
+  { xp: 65, description: 'Stay below 30% utilization all month' },
+];
 
 export default function ProfileScreen() {
-  const { user, backendUser } = useAuth();
+  const { backendUser } = useAuth();
+  const insets = useSafeAreaInsets();
+
+  const xp = backendUser?.xp ?? 0;
+  const rank = getRankInfo(xp);
 
   const handleLogout = async () => {
     try {
@@ -17,31 +74,196 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Profile</Text>
-        <Text style={styles.name}>{backendUser?.name || 'User'}</Text>
-        <Text style={styles.email}>{user?.email}</Text>
+    <View style={styles.container}>
+      <Image source={circleBg} style={styles.circleBg} resizeMode="cover" />
 
-        <TouchableOpacity style={styles.button} onPress={handleLogout}>
-          <Text style={styles.buttonText}>Log Out</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
+          <LogoutIcon width={30} height={30} color="#fff" />
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+
+      <View style={styles.content}>
+        {/* Badge + rank */}
+        <View style={styles.badgeSection}>
+          <View style={styles.badgeCircle}>
+            <BetaBadge width={90} height={90} />
+          </View>
+          <Text style={styles.rankName}>{rank.name}</Text>
+
+          {/* XP progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.round(rank.pct * 100)}%` as any }]} />
+          </View>
+          <Text style={styles.xpRemaining}>
+            {rank.remaining > 0 ? `${rank.remaining} Exp Until Next Level` : 'Max Level Reached'}
+          </Text>
+        </View>
+
+        {/* Weekly Quests */}
+        <QuestCard title="Weekly Quests" quests={WEEKLY_QUESTS} />
+
+        {/* Monthly Quests */}
+        <QuestCard title="Monthly Quests" quests={MONTHLY_QUESTS} />
+      </View>
+    </View>
   );
 }
 
+function QuestCard({ title, quests }: { title: string; quests: Quest[] }) {
+  return (
+    <View style={styles.questCard}>
+      <Text style={styles.questTitle}>{title}</Text>
+      <View style={styles.questRow}>
+        {quests.map((q, i) => (
+          <View key={i} style={styles.questItem}>
+            <View style={styles.xpBadge}>
+              <Text style={styles.xpBadgeText}>+ {q.xp} Exp</Text>
+            </View>
+            <Text style={styles.questDesc}>{q.description}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const CARD_SHADOW = {
+  shadowColor: '#7B2FBE',
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 4 },
+  elevation: 3,
+} as const;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f7f7f7' },
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  title: { fontSize: 28, fontFamily: Fonts.rounded, color: '#111', marginBottom: 16 },
-  name: { fontSize: 20, fontFamily: Fonts.rounded, color: '#333', marginBottom: 4 },
-  email: { fontSize: 16, fontFamily: Fonts.sans, color: '#666', marginBottom: 24 },
-  button: {
-    backgroundColor: '#111',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+  container: {
+    flex: 1,
+    backgroundColor: '#F4F0FA',
   },
-  buttonText: { color: '#fff', fontFamily: Fonts.rounded, fontSize: 16 },
+  circleBg: {
+    position: 'absolute',
+    top: -140,
+    alignSelf: 'center',
+    width: 400,
+    height: 400,
+  },
+
+  header: {
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.rounded,
+    color: '#fff',
+    textAlign: 'center',
+  },
+  logoutIcon: {
+    position: 'absolute',
+    right: 24,
+    top: 45,
+    bottom: 0,
+    justifyContent: 'center',
+    padding: 4,
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+
+  // Badge + rank
+  badgeSection: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  badgeCircle: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: '#5F4BF5',
+    borderWidth: 4,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rankName: {
+    fontSize: 32,
+    fontFamily: Fonts.rounded,
+    color: '#07004D',
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 14,
+  },
+  progressTrack: {
+    width: '70%',
+    height: 8,
+    backgroundColor: '#E8DDFA',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: 8,
+    backgroundColor: '#07004D',
+    borderRadius: 4,
+  },
+  xpRemaining: {
+    fontSize: 13,
+    fontFamily: Fonts.sans,
+    color: '#888',
+  },
+
+  // Quest cards
+  questCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
+    height: 175,
+    ...CARD_SHADOW,
+  },
+  questTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.rounded,
+    color: '#07004D',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  questRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  questItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  xpBadge: {
+    backgroundColor: '#D4C5F0',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  xpBadgeText: {
+    fontSize: 15,
+    fontFamily: Fonts.rounded,
+    color: '#07004D',
+    fontWeight: '700',
+  },
+  questDesc: {
+    fontSize: 11,
+    fontFamily: Fonts.sans,
+    color: '#555',
+    textAlign: 'center',
+    lineHeight: 16,
+    maxWidth: 110,
+  },
+
 });

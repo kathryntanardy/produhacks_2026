@@ -5,7 +5,6 @@ import {
   Image,
   Modal,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -124,11 +123,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.content}>
         {!hasCard ? (
           <TouchableOpacity
             style={styles.addCardContainer}
@@ -184,7 +179,7 @@ export default function HomeScreen() {
           <LockedCard locked={!hasCard} title="Insights" compact />
           <LockedCard locked={!hasCard} title="Goals" compact />
         </View>
-      </ScrollView>
+      </View>
 
       <Modal visible={showWebView} animationType="slide" presentationStyle="pageSheet" onRequestClose={dismissLink}>
         <SafeAreaView style={styles.modalContainer}>
@@ -267,14 +262,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  scrollArea: {
+  content: {
     flex: 1,
-  },
-  scrollContent: {
-    // 33px matches x=33 margin from reference SVG
     paddingHorizontal: 33,
     paddingTop: 4,
-    paddingBottom: 160,
   },
 
   addCardContainer: {

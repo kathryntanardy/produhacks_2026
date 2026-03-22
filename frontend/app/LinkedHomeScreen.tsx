@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -101,11 +100,7 @@ export default function LinkedHomeScreen() {
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.content}>
         {/* ── Box 1: Credit Score with gauge ── */}
         <View style={styles.scoreContainer}>
           <Text style={styles.scoreTitle}>Your Score</Text>
@@ -173,7 +168,7 @@ export default function LinkedHomeScreen() {
             <BetaBadge width={116} height={116} />
           </View>
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -217,12 +212,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // ── Scroll ──
-  scrollArea: { flex: 1 },
-  scrollContent: {
+  content: {
+    flex: 1,
     paddingHorizontal: 33,
     paddingTop: 4,
-    paddingBottom: 160,
   },
 
   // ── Box 1: Score ──
