@@ -241,13 +241,15 @@ export default function ExpensesScreen() {
 
       {/* ── Transactions (scrollable only here) ── */}
       <View style={styles.txSection}>
-        <Text style={styles.sectionTitle}>Transactions</Text>
         <ScrollView
           style={styles.txListScroll}
           contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+          alwaysBounceVertical
+          bounces
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5F4BF5" />}
         >
+          <Text style={styles.sectionTitle}>Transactions</Text>
           {loading ? (
             <ActivityIndicator style={{ marginTop: 32 }} color="#7B2FBE" />
           ) : transactions.length === 0 ? (
